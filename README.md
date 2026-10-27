@@ -129,15 +129,15 @@ Computed for each holding period (index shares are fixed, so buy-and-hold period
 
 ---
 
-## Sample output (synthetic market)
+## Results (real NSE data)
 
 | | |
 |---|---|
-| ![drawdown](reports/synthetic/charts/drawdown.png) | ![rolling](reports/synthetic/charts/rolling.png) |
-| ![sectors](reports/synthetic/charts/sector_weights.png) | ![attribution](reports/synthetic/charts/attribution.png) |
-| ![variants](reports/synthetic/charts/variants.png) | ![turnover](reports/synthetic/charts/turnover.png) |
+| ![drawdown](reports/yahoo/charts/drawdown.png) | ![rolling](reports/yahoo/charts/rolling.png) |
+| ![sectors](reports/yahoo/charts/sector_weights.png) | ![attribution](reports/yahoo/charts/attribution.png) |
+| ![variants](reports/yahoo/charts/variants.png) | ![turnover](reports/yahoo/charts/turnover.png) |
 
-Full tear sheet: [`reports/synthetic/report.md`](reports/synthetic/report.md).
+Full tear sheet: [`reports/yahoo/report.md`](reports/yahoo/report.md).
 
 ---
 
