@@ -6,7 +6,7 @@ A rules-based engine that **constructs, calculates and back-tests a free-float, 
 
 The index is calculated the way exchange index providers (NSE Indices, S&P DJI, MSCI) do it: **index shares and a divisor**, with the divisor reset at every quarterly rebalance so the level stays continuous. The full methodology lives in one YAML file, so every rule is auditable and changeable without touching code.
 
-![growth](reports/synthetic/charts/growth.png)
+![growth](reports/yahoo/charts/growth.png)
 
 > Results from real NSE data (Yahoo Finance), March 2016 – December 2025. A synthetic market is also bundled so the code runs offline and in CI.
 
