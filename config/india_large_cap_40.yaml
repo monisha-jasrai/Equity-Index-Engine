@@ -1,0 +1,114 @@
+# India Large-Cap 40 Index — methodology configuration
+# Every rule of the index lives here, so the methodology is auditable and changing it
+# never requires touching code.
+
+index:
+  name: "India Large-Cap 40"
+  base_value: 1000.0
+  start_date: "2016-01-01"
+  end_date: "2025-12-31"
+  currency: INR
+
+data:
+  source: yahoo            # yahoo | synthetic
+  cache_dir: data/cache
+  benchmark_ticker: "^NSEI"  # NIFTY 50 (price return)
+  synthetic_seed: 42
+
+selection:
+  n_constituents: 40
+  # Buffer rule: an existing member keeps its seat while its free-float market-cap
+  # rank is <= retain_rank. Reduces turnover from names oscillating around rank 40.
+  retain_rank: 48
+  min_history_days: 126          # ~6 months of trading history before eligible
+  liquidity_lookback_days: 126
+  min_median_traded_value: 5.0e8   # INR, median daily traded value over lookback
+  reference_lag_days: 5          # selection data snapshotted 5 trading days before effective date (no look-ahead)
+
+weighting:
+  scheme: capped_market_cap      # market_cap | capped_market_cap | equal | inverse_vol | sqrt_cap
+  single_stock_cap: 0.10
+  sector_cap: 0.35
+  vol_lookback_days: 252
+
+rebalance:
+  frequency: quarterly           # monthly | quarterly | semiannual | annual
+  # rebalanced on the last trading day of Mar / Jun / Sep / Dec
+
+costs:
+  transaction_cost_bps: 10       # per unit of traded notional (one side), applied to the investable "net" series
+
+analytics:
+  risk_free_rate: 0.065          # annual, approx. Indian 91-day T-bill
+  periods_per_year: 252
+  rolling_window_days: 252
+  bootstrap_samples: 2000
+  bootstrap_block_days: 20
+
+# Variants backtested side by side for the methodology comparison
+variants:
+  - capped_market_cap
+  - market_cap
+  - equal
+  - inverse_vol
+  - sqrt_cap
+
+# Candidate universe (NSE tickers on Yahoo use the .NS suffix) with GICS-style sectors.
+# The index selects the top 40 eligible names from these by free-float market cap.
+universe:
+  RELIANCE.NS: Energy
+  ONGC.NS: Energy
+  BPCL.NS: Energy
+  IOC.NS: Energy
+  COALINDIA.NS: Energy
+  HDFCBANK.NS: Financials
+  ICICIBANK.NS: Financials
+  SBIN.NS: Financials
+  KOTAKBANK.NS: Financials
+  AXISBANK.NS: Financials
+  INDUSINDBK.NS: Financials
+  BAJFINANCE.NS: Financials
+  BAJAJFINSV.NS: Financials
+  HDFCLIFE.NS: Financials
+  SBILIFE.NS: Financials
+  SHRIRAMFIN.NS: Financials
+  TCS.NS: Information Technology
+  INFY.NS: Information Technology
+  HCLTECH.NS: Information Technology
+  WIPRO.NS: Information Technology
+  TECHM.NS: Information Technology
+  LTIM.NS: Information Technology
+  HINDUNILVR.NS: Consumer Staples
+  ITC.NS: Consumer Staples
+  NESTLEIND.NS: Consumer Staples
+  BRITANNIA.NS: Consumer Staples
+  TATACONSUM.NS: Consumer Staples
+  DABUR.NS: Consumer Staples
+  MARUTI.NS: Consumer Discretionary
+  M&M.NS: Consumer Discretionary
+  EICHERMOT.NS: Consumer Discretionary
+  HEROMOTOCO.NS: Consumer Discretionary
+  BAJAJ-AUTO.NS: Consumer Discretionary
+  TITAN.NS: Consumer Discretionary
+  TRENT.NS: Consumer Discretionary
+  ASIANPAINT.NS: Materials
+  ULTRACEMCO.NS: Materials
+  GRASIM.NS: Materials
+  JSWSTEEL.NS: Materials
+  TATASTEEL.NS: Materials
+  HINDALCO.NS: Materials
+  SHREECEM.NS: Materials
+  LT.NS: Industrials
+  ADANIPORTS.NS: Industrials
+  ADANIENT.NS: Industrials
+  SIEMENS.NS: Industrials
+  BEL.NS: Industrials
+  SUNPHARMA.NS: Health Care
+  DRREDDY.NS: Health Care
+  CIPLA.NS: Health Care
+  DIVISLAB.NS: Health Care
+  APOLLOHOSP.NS: Health Care
+  NTPC.NS: Utilities
+  POWERGRID.NS: Utilities
+  TATAPOWER.NS: Utilities
+  BHARTIARTL.NS: Communication Services
