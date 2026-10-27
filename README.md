@@ -8,7 +8,7 @@ The index is calculated the way exchange index providers (NSE Indices, S&P DJI, 
 
 ![growth](reports/synthetic/charts/growth.png)
 
-> Charts in this README come from the bundled **synthetic** market (so the repo runs offline and in CI). Run with `--source yahoo` to reproduce on real NSE data; results land in `reports/yahoo/`.
+> Results from real NSE data (Yahoo Finance), March 2016 – December 2025. A synthetic market is also bundled so the code runs offline and in CI.
 
 ---
 
