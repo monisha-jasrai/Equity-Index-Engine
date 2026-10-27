@@ -1,6 +1,6 @@
 # Equity Index Engine — India Large-Cap 40
 
-![tests](https://github.com/<your-username>/equity-index-engine/actions/workflows/tests.yml/badge.svg)
+![tests](https://github.com/monisha-jasrai/Equity-Index-Engine/actions/workflows/tests.yml/badge.svg)
 
 A rules-based engine that **constructs, calculates and back-tests a free-float, market-cap weighted equity index** of 40 NSE-listed stocks, then evaluates it against the NIFTY 50 with institutional-grade risk, benchmark-relative and attribution analytics.
 
