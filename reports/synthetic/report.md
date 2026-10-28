@@ -3,7 +3,7 @@
 > **Data source: SYNTHETIC.** Simulated multi-factor market used to demonstrate and test the engine. Run with `--source yahoo` for real NSE data.
 
 **Period:** 2016-03-31 → 2025-12-31 · **Rebalances:** 39 (quarterly) ·
-**Constituents:** 40 · **Weighting:** capped_market_cap (stock cap 10%, sector cap 35%) ·
+**Index type:** capped free-float market-cap weighted · **Constituents:** 40 · **Weighting:** capped_market_cap on free-float market cap (simulated IWFs) (stock cap 10%, sector cap 35%) ·
 **Costs:** 10 bps per unit traded · **Risk-free:** 6.5%
 
 ![growth](charts/growth.png)
@@ -157,3 +157,42 @@ Current top 15 holdings (full list in `current_constituents.csv`):
 | LTIM | Information Technology | 2.05% | 2.13% | 1.00 |
 | SBILIFE | Financials | 2.50% | 2.12% | 1.00 |
 | TECHM | Information Technology | 2.01% | 2.01% | 1.00 |
+
+## Validation
+
+Every run reconciles its own outputs; failures are logged and shown here. Unit tests (`pytest`) separately check the logic on controlled inputs.
+
+| Check | Result | Detail |
+|---|---|---|
+| Weights sum to 100% | ✅ pass | max abs(Σw − 1) over 2,545 days and 39 rebalances |
+| Single-stock cap respected | ✅ pass | largest target weight 10.0000% vs cap 10% |
+| Sector cap respected | ✅ pass | largest sector target 23.7725% vs cap 35% |
+| Divisor keeps level continuous | ✅ pass | max relative gap between old-basket and new-basket level at each rebalance |
+| Dividends reconcile (TR − PR) | ✅ pass | max daily gap vs dividends rebuilt from holdings; dividend yield ≈ 1.62%/yr |
+| Costs reconcile (NET vs TR) | ✅ pass | cumulative cost drag 0.187% from 38 rebalances |
+| Attribution sums to active return | ✅ pass | allocation + selection + interaction − active = -7.0e-15 |
+| Attribution index return = PR level | ✅ pass | 288.1793% vs 288.1793% |
+| Selection uses lagged data | ✅ pass | minimum lag 5 trading days (required ≥ 5) |
+
+## Data provenance and limitations
+
+| Input | Basis in this run |
+|---|---|
+| Universe | fixed candidate list of current large caps (not historical index membership) (56 candidates with data) |
+| Weighting basis | free-float market cap (simulated IWFs) |
+| Index weight resting on point-in-time share counts (avg. over rebalances) | 100.0% |
+| … on back-filled share counts (look-ahead) | 0.0% |
+| … on today's share count used for past dates (look-ahead) | 0.0% |
+| Index weight with a known (non-default) IWF | 100.0% |
+| Prices, volumes, liquidity screen | daily, point-in-time (split-adjusted closes) |
+| Excluded (no data) | none |
+
+Limitations:
+
+- **Survivorship bias.** The candidates are today's large caps, so companies that were large in 2016 but later shrank or delisted are missing. Treat results as a fixed-candidate-universe study, not a reconstruction of a historical index.
+- **Free float.** Simulated IWFs.
+- **Share counts.** Where a stock's weight rests on back-filled or current share counts (above), its historical weight uses information that was not available at the time.
+- **Benchmark.** NIFTY 50 price return; a dividend-inclusive comparison needs the NIFTY 50 TRI.
+- **Corporate actions.** Splits via split-adjusted prices; spin-offs and rights issues are not modelled.
+
+Run log: `run_log.json` (2026-10-27T23:05:17+00:00, checks passed 9/9, config hash `d8989fa13d971f83`).

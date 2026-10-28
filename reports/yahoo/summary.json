@@ -85,5 +85,8 @@
     "selection": -0.2055119084521824,
     "interaction": 0.011214666514682954,
     "residual": -1.1102230246251565e-15
-  }
+  },
+  "weighting_basis": "full market cap (IWF = 1: no historical free-float data)",
+  "is_free_float": false,
+  "checks_passed": "9/9"
 }

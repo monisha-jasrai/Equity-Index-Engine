@@ -13,6 +13,7 @@ from .attribution import brinson_fachler, contributions
 from .config import IndexConfig
 from .data import MarketData, load_market_data
 from .engine import BacktestResult, run_backtest
+from .validation import provenance, run_checks, run_log, write_run_log
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,8 @@ def parent_universe(md: MarketData, cfg: IndexConfig) -> BacktestResult:
     return run_backtest(md, pcfg, scheme="market_cap", name="parent")
 
 
-def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False) -> dict:
+def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False,
+        config_path: str | None = None, argv: list[str] | None = None) -> dict:
     out = Path(out_dir)
     (out / "charts").mkdir(parents=True, exist_ok=True)
     md = load_market_data(cfg, refresh=refresh)
@@ -100,26 +102,39 @@ def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False) -> dict:
         "attribution": rp.chart_attribution(attr["by_sector"], out / "charts"),
     }
 
+    checks = run_checks(main, md, cfg, attr)
+    prov = provenance(main, md, cfg)
+    log_data = run_log(cfg, md, main, checks, prov, config_path, argv)
+    write_run_log(log_data, out / "run_log.json")
+    failed = [c.name for c in checks if not c.passed]
+    if failed:
+        log.warning("Validation checks FAILED: %s", failed)
+
     md_text = _render_markdown(cfg, md, main, stats, boot, dd, cal, var_table, attr, contrib,
-                               holdings, rt, charts)
+                               holdings, rt, charts, checks, prov, log_data)
     (out / "report.md").write_text(md_text)
     summary = {"config": cfg.name, "source": md.source, "start": str(idx[0].date()),
                "end": str(idx[-1].date()), "rebalances": len(main.rebalances),
                "stats": stats, "bootstrap": boot,
-               "attribution_totals": attr["totals"]["value"].to_dict()}
+               "attribution_totals": attr["totals"]["value"].to_dict(),
+               "weighting_basis": md.weighting_basis, "is_free_float": md.is_free_float,
+               "checks_passed": log_data["checks_passed"]}
     (out / "summary.json").write_text(json.dumps(summary, indent=2, default=float))
     return {"md": md, "main": main, "variants": variants, "parent": parent, "stats": stats,
-            "attribution": attr, "summary": summary}
+            "attribution": attr, "summary": summary, "checks": checks, "provenance": prov}
 
 
 def _render_markdown(cfg, md, main, stats, boot, dd, cal, var_table, attr, contrib,
-                     holdings, rt, charts) -> str:
+                     holdings, rt, charts, checks, prov, log_data) -> str:
     idx = main.levels.index
-    src_note = ("> **Data source: SYNTHETIC.** Simulated multi-factor market used to demonstrate and "
-                "test the engine. Run with `--source yahoo` for real NSE data.\n"
-                if md.source == "synthetic" else
-                "> **Data source: Yahoo Finance (NSE).** See README for data limitations "
-                "(survivorship bias, free-float approximation).\n")
+    if md.source == "synthetic":
+        src_note = ("> **Data source: SYNTHETIC.** Simulated multi-factor market used to demonstrate and "
+                    "test the engine. Run with `--source yahoo` for real NSE data.\n")
+    else:
+        src_note = ("> **Data source: Yahoo Finance (NSE).** Fixed-candidate-universe study weighted on "
+                    f"**{md.weighting_basis}**. See *Data provenance and limitations* below.\n")
+    kind = ("capped free-float market-cap weighted" if md.is_free_float
+            else "capped market-cap weighted (free-float-ready framework)")
     totals = attr["totals"]["value"]
     contr = contrib["stocks"]
     top = contr.head(10)
@@ -145,12 +160,22 @@ def _render_markdown(cfg, md, main, stats, boot, dd, cal, var_table, attr, contr
     reb_md = rp.df_to_md(recent, pct_cols=("one_way_turnover",), num_cols=("cost_bps", "divisor"),
                          index_name="Rebalance")
     rec = dd["recovery"].date() if dd["recovery"] is not None else "not yet recovered"
+    checks_md = "| Check | Result | Detail |\n|---|---|---|\n" + "\n".join(
+        f"| {c.name} | {'✅ pass' if c.passed else '❌ FAIL'} | {c.detail} |" for c in checks)
+    excluded = ", ".join(t.replace(".NS", "") for t in prov["excluded_no_data"]) or "none"
+    ff_note = ("IWF = 1 − promoter holding from the shareholding file, applied "
+               f"{cfg.shareholding_lag_days} days after each quarter-end; NSE also excludes some other "
+               "locked-in holdings, so this approximates the official factor."
+               if md.iwf_source == "shareholding_file" else
+               "Simulated IWFs." if md.iwf_source == "synthetic" else
+               "No historical free-float data was used (IWF = 1), so weights are on full market cap. "
+               "The engine supports point-in-time IWFs via `data.shareholding_file`.")
 
     return f"""# {cfg.name} — Backtest Report
 
 {src_note}
 **Period:** {idx[0].date()} → {idx[-1].date()} · **Rebalances:** {len(main.rebalances)} ({cfg.frequency}) ·
-**Constituents:** {cfg.n_constituents} · **Weighting:** {cfg.scheme} (stock cap {cfg.single_stock_cap:.0%}, sector cap {cfg.sector_cap:.0%}) ·
+**Index type:** {kind} · **Constituents:** {cfg.n_constituents} · **Weighting:** {cfg.scheme} on {md.weighting_basis} (stock cap {cfg.single_stock_cap:.0%}, sector cap {cfg.sector_cap:.0%}) ·
 **Costs:** {cfg.transaction_cost_bps:.0f} bps per unit traded · **Risk-free:** {cfg.risk_free_rate:.1%}
 
 ![growth](charts/{charts['growth']})
@@ -213,4 +238,33 @@ Most recent rebalances (full log in `rebalance_log.csv`):
 Current top 15 holdings (full list in `current_constituents.csv`):
 
 {hold_md}
+
+## Validation
+
+Every run reconciles its own outputs; failures are logged and shown here. Unit tests (`pytest`) separately check the logic on controlled inputs.
+
+{checks_md}
+
+## Data provenance and limitations
+
+| Input | Basis in this run |
+|---|---|
+| Universe | {prov['universe']} ({prov['n_candidates_with_data']} candidates with data) |
+| Weighting basis | {prov['weighting_basis']} |
+| Index weight resting on point-in-time share counts (avg. over rebalances) | {prov['shares_point_in_time_weight']:.1%} |
+| … on back-filled share counts (look-ahead) | {prov['shares_backfilled_weight']:.1%} |
+| … on today's share count used for past dates (look-ahead) | {prov['shares_current_fallback_weight']:.1%} |
+| Index weight with a known (non-default) IWF | {prov['iwf_known_weight']:.1%} |
+| Prices, volumes, liquidity screen | {prov['prices_volumes']} |
+| Excluded (no data) | {excluded} |
+
+Limitations:
+
+- **Survivorship bias.** The candidates are today's large caps, so companies that were large in 2016 but later shrank or delisted are missing. Treat results as a fixed-candidate-universe study, not a reconstruction of a historical index.
+- **Free float.** {ff_note}
+- **Share counts.** Where a stock's weight rests on back-filled or current share counts (above), its historical weight uses information that was not available at the time.
+- **Benchmark.** NIFTY 50 price return; a dividend-inclusive comparison needs the NIFTY 50 TRI.
+- **Corporate actions.** Splits via split-adjusted prices; spin-offs and rights issues are not modelled.
+
+Run log: `run_log.json` ({log_data['run_at_utc']}, checks passed {log_data['checks_passed']}, config hash `{log_data['config_sha256']}`).
 """

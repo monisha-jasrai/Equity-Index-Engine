@@ -22,6 +22,8 @@ class IndexConfig:
     cache_dir: str
     benchmark_ticker: str
     synthetic_seed: int
+    shareholding_file: str | None
+    shareholding_lag_days: int
     # selection
     n_constituents: int
     retain_rank: int
@@ -79,6 +81,8 @@ def load_config(path: str | Path, **overrides) -> IndexConfig:
         cache_dir=raw["data"]["cache_dir"],
         benchmark_ticker=raw["data"]["benchmark_ticker"],
         synthetic_seed=int(raw["data"].get("synthetic_seed", 42)),
+        shareholding_file=raw["data"].get("shareholding_file") or None,
+        shareholding_lag_days=int(raw["data"].get("shareholding_lag_days", 21)),
         n_constituents=int(raw["selection"]["n_constituents"]),
         retain_rank=int(raw["selection"]["retain_rank"]),
         min_history_days=int(raw["selection"]["min_history_days"]),

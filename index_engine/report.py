@@ -142,7 +142,7 @@ def chart_variants(table: pd.DataFrame, out: Path) -> str:
         ax.annotate(name, (row["volatility"], row["cagr"]),
                     xytext=(-8, -3) if crowded_below else (8, 3), ha="right" if crowded_below else "left",
                     textcoords="offset points", fontsize=8.5, color=INK2)
-    ax.xaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=0))
+    ax.xaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=1))
     ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=1))
     ax.set_xlabel("Annualised volatility")
     ax.set_ylabel("CAGR (price return)")

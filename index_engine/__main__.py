@@ -26,7 +26,8 @@ def main(argv: list[str] | None = None) -> None:
     overrides = {k: v for k, v in {"source": a.source, "scheme": a.scheme, "frequency": a.frequency}.items() if v}
     cfg = load_config(a.config, **overrides)
     out = a.out or f"reports/{cfg.source}"
-    res = run(cfg, out, refresh=a.refresh)
+    import sys
+    res = run(cfg, out, refresh=a.refresh, config_path=a.config, argv=["python -m index_engine", *sys.argv[1:]])
     s = res["stats"]
     print(f"\n{cfg.name}  [{res['summary']['source']}]  {res['summary']['start']} -> {res['summary']['end']}")
     for k in ("Index PR", "Index TR", "Index NET", "Benchmark PR"):
@@ -34,7 +35,9 @@ def main(argv: list[str] | None = None) -> None:
               f"Sharpe {s[k]['sharpe']:5.2f}   maxDD {s[k]['max_drawdown']:7.2%}")
     pr = s["Index PR"]
     print(f"  vs benchmark: beta {pr['beta']:.2f}  TE {pr['tracking_error']:.2%}  IR {pr['information_ratio']:.2f}")
-    print(f"\nReport written to {out}/report.md")
+    print(f"  weighting basis: {res['md'].weighting_basis}")
+    print(f"  validation checks passed: {res['summary']['checks_passed']}")
+    print(f"\nReport written to {out}/report.md  (run log: {out}/run_log.json)")
 
 
 if __name__ == "__main__":

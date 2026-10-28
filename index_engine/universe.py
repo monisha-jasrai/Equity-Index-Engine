@@ -45,7 +45,7 @@ def eligibility(md: MarketData, cfg: IndexConfig, ref_pos: int) -> tuple[list[st
 
 def select_constituents(md: MarketData, cfg: IndexConfig, ref_pos: int,
                         current: list[str] | None = None) -> SelectionResult:
-    """Top-N by free-float market cap, keeping incumbents ranked within `retain_rank`."""
+    """Top-N by (float-adjusted) market cap, keeping incumbents ranked within `retain_rank`."""
     current = current or []
     eligible, excluded = eligibility(md, cfg, ref_pos)
     fmc = md.float_market_cap().iloc[ref_pos][eligible]

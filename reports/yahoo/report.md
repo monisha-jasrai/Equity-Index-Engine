@@ -1,9 +1,9 @@
 # India Large-Cap 40 — Backtest Report
 
-> **Data source: Yahoo Finance (NSE).** See README for data limitations (survivorship bias, free-float approximation).
+> **Data source: Yahoo Finance (NSE).** Fixed-candidate-universe study weighted on **full market cap (IWF = 1: no historical free-float data)**. See *Data provenance and limitations* below.
 
 **Period:** 2016-03-31 → 2025-12-30 · **Rebalances:** 39 (quarterly) ·
-**Constituents:** 40 · **Weighting:** capped_market_cap (stock cap 10%, sector cap 35%) ·
+**Index type:** capped market-cap weighted (free-float-ready framework) · **Constituents:** 40 · **Weighting:** capped_market_cap on full market cap (IWF = 1: no historical free-float data) (stock cap 10%, sector cap 35%) ·
 **Costs:** 10 bps per unit traded · **Risk-free:** 6.5%
 
 ![growth](charts/growth.png)
@@ -157,3 +157,42 @@ Current top 15 holdings (full list in `current_constituents.csv`):
 | HCLTECH | Information Technology | 2.13% | 2.33% | 1.00 |
 | M&M | Consumer Discretionary | 2.38% | 2.32% | 1.00 |
 | KOTAKBANK | Financials | 2.20% | 2.23% | 1.00 |
+
+## Validation
+
+Every run reconciles its own outputs; failures are logged and shown here. Unit tests (`pytest`) separately check the logic on controlled inputs.
+
+| Check | Result | Detail |
+|---|---|---|
+| Weights sum to 100% | ✅ pass | max abs(Σw − 1) over 2,409 days and 39 rebalances |
+| Single-stock cap respected | ✅ pass | largest target weight 10.0000% vs cap 10% |
+| Sector cap respected | ✅ pass | largest sector target 29.6737% vs cap 35% |
+| Divisor keeps level continuous | ✅ pass | max relative gap between old-basket and new-basket level at each rebalance |
+| Dividends reconcile (TR − PR) | ✅ pass | max daily gap vs dividends rebuilt from holdings; dividend yield ≈ 1.63%/yr |
+| Costs reconcile (NET vs TR) | ✅ pass | cumulative cost drag 0.150% from 38 rebalances |
+| Attribution sums to active return | ✅ pass | allocation + selection + interaction − active = -1.1e-15 |
+| Attribution index return = PR level | ✅ pass | 257.1069% vs 257.1069% |
+| Selection uses lagged data | ✅ pass | minimum lag 5 trading days (required ≥ 5) |
+
+## Data provenance and limitations
+
+| Input | Basis in this run |
+|---|---|
+| Universe | fixed candidate list of current large caps (not historical index membership) (55 candidates with data) |
+| Weighting basis | full market cap (IWF = 1: no historical free-float data) |
+| Index weight resting on point-in-time share counts (avg. over rebalances) | 88.2% |
+| … on back-filled share counts (look-ahead) | 6.0% |
+| … on today's share count used for past dates (look-ahead) | 5.8% |
+| Index weight with a known (non-default) IWF | 0.0% |
+| Prices, volumes, liquidity screen | daily, point-in-time (split-adjusted closes) |
+| Excluded (no data) | LTIM |
+
+Limitations:
+
+- **Survivorship bias.** The candidates are today's large caps, so companies that were large in 2016 but later shrank or delisted are missing. Treat results as a fixed-candidate-universe study, not a reconstruction of a historical index.
+- **Free float.** No historical free-float data was used (IWF = 1), so weights are on full market cap. The engine supports point-in-time IWFs via `data.shareholding_file`.
+- **Share counts.** Where a stock's weight rests on back-filled or current share counts (above), its historical weight uses information that was not available at the time.
+- **Benchmark.** NIFTY 50 price return; a dividend-inclusive comparison needs the NIFTY 50 TRI.
+- **Corporate actions.** Splits via split-adjusted prices; spin-offs and rights issues are not modelled.
+
+Run log: `run_log.json` (2026-10-28T19:56:41+00:00, checks passed 9/9, config hash `d8989fa13d971f83`).

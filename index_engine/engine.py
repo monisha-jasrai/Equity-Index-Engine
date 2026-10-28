@@ -125,6 +125,12 @@ def run_backtest(md: MarketData, cfg: IndexConfig, scheme: str | None = None,
         ref = max(0, R - cfg.reference_lag_days)
         sel = select_constituents(md, cfg, ref, current)
         cons = sel.constituents
+        if scheme == "capped_market_cap" and len(cons) * cfg.single_stock_cap < 1:
+            raise RuntimeError(
+                f"Only {len(cons)} stocks were eligible on {dates[ref].date()}, too few for a "
+                f"{cfg.single_stock_cap:.0%} stock cap. This usually means the data download was "
+                f"incomplete ({len(sel.excluded)} excluded, e.g. "
+                f"{dict(list(sel.excluded.items())[:3])}). Wait 10-15 minutes and rerun with --refresh.")
         hist = rets_all.iloc[max(0, ref - cfg.vol_lookback_days + 1): ref + 1]
         fmc_ref = fmc_all.iloc[ref]
         w_t = target_weights(scheme, cons, fmc_ref, hist, md.sectors,
@@ -136,7 +142,7 @@ def run_backtest(md: MarketData, cfg: IndexConfig, scheme: str | None = None,
         cf = cf / cf.max()                          # convention: largest CF = 1
         q_new = np.zeros(len(tickers))
         idx = [col[t] for t in cons]
-        q_new[idx] = (md.shares.iloc[ref][cons] * md.iwf[cons] * cf).to_numpy()
+        q_new[idx] = (md.shares.iloc[ref][cons] * md.iwf_at(ref)[cons] * cf).to_numpy()
 
         p_R = P[R]
         mv_new = np.nansum(q_new * p_R)

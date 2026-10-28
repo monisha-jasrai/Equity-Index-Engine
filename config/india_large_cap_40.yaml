@@ -1,4 +1,6 @@
 # India Large-Cap 40 Index — methodology configuration
+# Universe note: the candidate list below is a FIXED list of today's large caps, so every
+# backtest is a fixed-candidate-universe study (survivorship bias; see README).
 # Every rule of the index lives here, so the methodology is auditable and changing it
 # never requires touching code.
 
@@ -14,10 +16,15 @@ data:
   cache_dir: data/cache
   benchmark_ticker: "^NSEI"  # NIFTY 50 (price return)
   synthetic_seed: 42
+  # Optional point-in-time shareholding patterns (e.g. exported from Capitaline):
+  # CSV with columns date, ticker, shares_outstanding, promoter_holding_pct.
+  # When set, IWF = 1 - promoter holding and the index becomes genuinely free-float weighted.
+  shareholding_file: null          # e.g. data/shareholding.csv
+  shareholding_lag_days: 21        # patterns are published ~3 weeks after quarter-end
 
 selection:
   n_constituents: 40
-  # Buffer rule: an existing member keeps its seat while its free-float market-cap
+  # Buffer rule: an existing member keeps its seat while its float-adjusted market-cap
   # rank is <= retain_rank. Reduces turnover from names oscillating around rank 40.
   retain_rank: 48
   min_history_days: 126          # ~6 months of trading history before eligible
@@ -54,7 +61,8 @@ variants:
   - sqrt_cap
 
 # Candidate universe (NSE tickers on Yahoo use the .NS suffix) with GICS-style sectors.
-# The index selects the top 40 eligible names from these by free-float market cap.
+# The index selects the top 40 eligible names from these by float-adjusted market cap
+# (full market cap unless shareholding_file supplies free-float factors).
 universe:
   RELIANCE.NS: Energy
   ONGC.NS: Energy

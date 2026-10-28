@@ -1,0 +1,139 @@
+{
+  "run_at_utc": "2026-10-27T23:05:17+00:00",
+  "command": "python -m index_engine --source synthetic",
+  "git_commit": null,
+  "platform": "Linux-6.18.44-fc-v165-x86_64-with-glibc2.39",
+  "versions": {
+    "python": "3.13.18",
+    "numpy": "2.5.3",
+    "pandas": "3.0.5",
+    "matplotlib": "3.11.2",
+    "pyyaml": "6.0.3",
+    "yfinance": "1.7.0"
+  },
+  "config_file": "config/india_large_cap_40.yaml",
+  "config_sha256": "d8989fa13d971f83",
+  "config": {
+    "name": "India Large-Cap 40",
+    "base_value": 1000.0,
+    "start_date": "2016-01-01",
+    "end_date": "2025-12-31",
+    "currency": "INR",
+    "source": "synthetic",
+    "cache_dir": "data/cache",
+    "benchmark_ticker": "^NSEI",
+    "synthetic_seed": 42,
+    "shareholding_file": null,
+    "shareholding_lag_days": 21,
+    "n_constituents": 40,
+    "retain_rank": 48,
+    "min_history_days": 126,
+    "liquidity_lookback_days": 126,
+    "min_median_traded_value": 500000000.0,
+    "reference_lag_days": 5,
+    "scheme": "capped_market_cap",
+    "single_stock_cap": 0.1,
+    "sector_cap": 0.35,
+    "vol_lookback_days": 252,
+    "frequency": "quarterly",
+    "transaction_cost_bps": 10.0,
+    "risk_free_rate": 0.065,
+    "periods_per_year": 252,
+    "rolling_window_days": 252,
+    "bootstrap_samples": 2000,
+    "bootstrap_block_days": 20,
+    "variants": [
+      "capped_market_cap",
+      "market_cap",
+      "equal",
+      "inverse_vol",
+      "sqrt_cap"
+    ]
+  },
+  "data_source": "synthetic",
+  "data_files_sha256": {},
+  "period": [
+    "2016-03-31",
+    "2025-12-31"
+  ],
+  "rebalances": 39,
+  "provenance": {
+    "shares_point_in_time_weight": 1.0,
+    "shares_backfilled_weight": 0.0,
+    "shares_current_fallback_weight": 0.0,
+    "iwf_known_weight": 1.0,
+    "iwf_source": "synthetic",
+    "weighting_basis": "free-float market cap (simulated IWFs)",
+    "is_free_float": true,
+    "universe": "fixed candidate list of current large caps (not historical index membership)",
+    "n_candidates_with_data": 56,
+    "prices_volumes": "daily, point-in-time (split-adjusted closes)",
+    "excluded_no_data": []
+  },
+  "checks_passed": "9/9",
+  "checks": [
+    {
+      "name": "Weights sum to 100%",
+      "measured": 5.551115123125783e-16,
+      "tolerance": 1e-09,
+      "passed": true,
+      "detail": "max abs(\u03a3w \u2212 1) over 2,545 days and 39 rebalances"
+    },
+    {
+      "name": "Single-stock cap respected",
+      "measured": 2.7755575615628914e-17,
+      "tolerance": 1e-09,
+      "passed": true,
+      "detail": "largest target weight 10.0000% vs cap 10%"
+    },
+    {
+      "name": "Sector cap respected",
+      "measured": -0.11227477677306885,
+      "tolerance": 1e-09,
+      "passed": true,
+      "detail": "largest sector target 23.7725% vs cap 35%"
+    },
+    {
+      "name": "Divisor keeps level continuous",
+      "measured": 4.440892098500626e-16,
+      "tolerance": 1e-10,
+      "passed": true,
+      "detail": "max relative gap between old-basket and new-basket level at each rebalance"
+    },
+    {
+      "name": "Dividends reconcile (TR \u2212 PR)",
+      "measured": 5.91107024439097e-16,
+      "tolerance": 1e-12,
+      "passed": true,
+      "detail": "max daily gap vs dividends rebuilt from holdings; dividend yield \u2248 1.62%/yr"
+    },
+    {
+      "name": "Costs reconcile (NET vs TR)",
+      "measured": 0.0,
+      "tolerance": 1e-10,
+      "passed": true,
+      "detail": "cumulative cost drag 0.187% from 38 rebalances"
+    },
+    {
+      "name": "Attribution sums to active return",
+      "measured": 6.994405055138486e-15,
+      "tolerance": 1e-10,
+      "passed": true,
+      "detail": "allocation + selection + interaction \u2212 active = -7.0e-15"
+    },
+    {
+      "name": "Attribution index return = PR level",
+      "measured": 3.552713678800501e-15,
+      "tolerance": 1e-09,
+      "passed": true,
+      "detail": "288.1793% vs 288.1793%"
+    },
+    {
+      "name": "Selection uses lagged data",
+      "measured": 5.0,
+      "tolerance": 5.0,
+      "passed": true,
+      "detail": "minimum lag 5 trading days (required \u2265 5)"
+    }
+  ]
+}

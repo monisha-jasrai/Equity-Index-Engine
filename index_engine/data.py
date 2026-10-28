@@ -11,6 +11,7 @@ Two interchangeable sources produce the same `MarketData` container:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,32 +23,71 @@ from .config import IndexConfig
 log = logging.getLogger(__name__)
 
 
+# provenance codes for each (date, ticker) share count
+PIT = "point_in_time"            # a share count reported on or before that date
+BACKFILLED = "backfilled"        # before the first reported count: later value copied back (look-ahead)
+CURRENT = "current_fallback"     # no history at all: today's count used for every date (look-ahead)
+SHAREHOLDING = "shareholding_file"  # from the user's shareholding-pattern file (e.g. Capitaline)
+SYNTHETIC = "synthetic"
+
+
 @dataclass
 class MarketData:
     prices: pd.DataFrame      # date x ticker, close (split-adjusted, NOT dividend-adjusted)
     dividends: pd.DataFrame   # date x ticker, cash dividend per share on ex-date (0 otherwise)
-    shares: pd.DataFrame      # date x ticker, shares outstanding
+    shares: pd.DataFrame      # date x ticker, shares outstanding (on the price series' split basis)
     volume: pd.DataFrame      # date x ticker, shares traded
-    iwf: pd.Series            # ticker -> investable weight factor (free-float fraction)
+    iwf: pd.Series | pd.DataFrame  # investable weight factor: per ticker, or date x ticker
     sectors: pd.Series        # ticker -> sector
     benchmark: pd.Series      # date -> benchmark price-return level
     source: str = "unknown"
+    shares_source: pd.DataFrame | None = None  # date x ticker provenance code (see above)
+    iwf_source: str = "assumed_one"            # assumed_one | synthetic | shareholding_file
+    iwf_known: pd.DataFrame | None = None      # set in __post_init__
 
     def __post_init__(self) -> None:
-        idx = self.prices.index
+        idx, cols = self.prices.index, self.prices.columns
         for name in ("dividends", "shares", "volume"):
-            df = getattr(self, name).reindex(index=idx, columns=self.prices.columns)
-            setattr(self, name, df)
+            setattr(self, name, getattr(self, name).reindex(index=idx, columns=cols))
         self.dividends = self.dividends.fillna(0.0)
         self.volume = self.volume.fillna(0.0)
+        if self.shares_source is None:
+            code = SYNTHETIC if self.source == "synthetic" else PIT
+            self.shares_source = pd.DataFrame(code, index=idx, columns=cols)
+        self.shares_source = self.shares_source.reindex(index=idx, columns=cols).ffill().fillna(BACKFILLED)
+        before_first = self.shares.ffill().isna() & self.shares.bfill().notna()
+        self.shares_source = self.shares_source.mask(before_first, BACKFILLED)
         self.shares = self.shares.ffill().bfill()
         self.benchmark = self.benchmark.reindex(idx).ffill()
-        self.iwf = self.iwf.reindex(self.prices.columns).fillna(1.0)
-        self.sectors = self.sectors.reindex(self.prices.columns)
+        if isinstance(self.iwf, pd.DataFrame):
+            raw = self.iwf.reindex(index=idx, columns=cols)
+            self.iwf_known = raw.notna()               # False where IWF defaulted to 1
+            self.iwf = raw.ffill().fillna(1.0)
+        else:
+            known = self.iwf_source != "assumed_one"
+            self.iwf = self.iwf.reindex(cols).fillna(1.0)
+            self.iwf_known = pd.DataFrame(known, index=idx, columns=cols)
+        self.sectors = self.sectors.reindex(cols)
 
     @property
     def tickers(self) -> list[str]:
         return list(self.prices.columns)
+
+    @property
+    def is_free_float(self) -> bool:
+        """True only when IWFs come from real free-float data (or the simulator)."""
+        return self.iwf_source in ("synthetic", "shareholding_file")
+
+    @property
+    def weighting_basis(self) -> str:
+        if self.iwf_source == "shareholding_file":
+            return "free-float market cap (IWF = 1 − promoter holding, point-in-time)"
+        if self.iwf_source == "synthetic":
+            return "free-float market cap (simulated IWFs)"
+        return "full market cap (IWF = 1: no historical free-float data)"
+
+    def iwf_at(self, pos: int) -> pd.Series:
+        return self.iwf.iloc[pos] if isinstance(self.iwf, pd.DataFrame) else self.iwf
 
     def float_market_cap(self) -> pd.DataFrame:
         return self.prices * self.shares * self.iwf
@@ -146,90 +186,231 @@ def make_synthetic(cfg: IndexConfig) -> MarketData:
     bench_ret = (w * P.pct_change(fill_method=None)).sum(axis=1) + rng.normal(0, 0.0015, T)
     bench = 10000.0 * (1 + bench_ret.fillna(0)).cumprod()
 
-    return MarketData(P, D, SH, V, iwf, sectors, bench, source="synthetic")
+    return MarketData(P, D, SH, V, iwf, sectors, bench, source="synthetic", iwf_source="synthetic")
 
 
 # ------------------------------------------------------------------------------ yahoo
 def load_yahoo(cfg: IndexConfig, refresh: bool = False) -> MarketData:
     """Download (or read from cache) real NSE data via yfinance."""
-    import yfinance as yf  # imported lazily so offline use doesn't need it
-
     cache = Path(cfg.cache_dir)
     cache.mkdir(parents=True, exist_ok=True)
-    files = {k: cache / f"{k}.csv" for k in ("prices", "dividends", "volume", "shares", "benchmark")}
+    names = ("prices", "dividends", "volume", "shares", "shares_source", "splits", "benchmark")
+    files = {k: cache / f"{k}.csv" for k in names}
     tickers = list(cfg.universe)
     hist_start = (pd.Timestamp(cfg.start_date) - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
 
     if refresh or not all(f.exists() for f in files.values()):
-        log.info("Downloading %d tickers from Yahoo Finance...", len(tickers))
-        raw = yf.download(tickers, start=hist_start, end=cfg.end_date, auto_adjust=False,
-                          actions=True, group_by="column", progress=False, threads=True)
-        raw.index = pd.to_datetime(raw.index).tz_localize(None)
-        grab = lambda f: raw[f].reindex(columns=tickers) if f in raw.columns.get_level_values(0) \
-            else pd.DataFrame(np.nan, index=raw.index, columns=tickers)
-        prices = grab("Close")              # split-adjusted, not dividend-adjusted
-        dividends = grab("Dividends").fillna(0.0)
-        volume = grab("Volume")
-        shares = _shares_history(tickers, prices.index, grab("Stock Splits"))
-        bench = yf.download(cfg.benchmark_ticker, start=hist_start, end=cfg.end_date,
-                            auto_adjust=False, progress=False)["Close"].squeeze()
+        import yfinance as yf  # imported lazily so offline use doesn't need it
+
+        log.info("Downloading %d tickers from Yahoo Finance (in small batches)...", len(tickers))
+        fields = _download_prices(yf, tickers, hist_start, cfg.end_date)
+        prices = fields["Close"]            # split-adjusted, not dividend-adjusted
+        dividends = fields["Dividends"].fillna(0.0)
+        volume = fields["Volume"]
+        splits = fields["Stock Splits"].fillna(0.0)
+        bench = _retry(lambda: yf.download(cfg.benchmark_ticker, start=hist_start, end=cfg.end_date,
+                                           auto_adjust=False, progress=False)["Close"].squeeze(),
+                       ok=lambda b: b is not None and len(b) > 0, what="benchmark")
+        if bench is None:
+            raise RuntimeError("Could not download the benchmark from Yahoo. Wait a few minutes "
+                               "and rerun with --refresh.")
         bench.index = pd.to_datetime(bench.index).tz_localize(None)
         missing = [t for t in tickers if prices[t].notna().sum() == 0]
         if missing:
-            log.warning("No price data for %s (renamed/delisted?) - excluded", missing)
+            log.warning("No price data after retries for %s - excluded", missing)
+        have = [t for t in tickers if t not in missing]
+        log.info("Fetching share counts for %d tickers (one at a time, ~1-2 min)...", len(have))
+        shares, shares_src = _shares_history(have, prices.index, splits[have])
+        shares = shares.reindex(columns=tickers)
+        shares_src = shares_src.reindex(columns=tickers)
+        no_shares = [t for t in have if shares[t].isna().all()]
+        if no_shares:
+            log.warning("No share count available for %s - these will be excluded", no_shares)
+        usable = len(have) - len(no_shares)
+        if usable < len(tickers) - 5:
+            log.warning("Only %d of %d tickers downloaded fully. Yahoo is probably rate-limiting; "
+                        "wait 10-15 minutes and rerun with --refresh for complete data.",
+                        usable, len(tickers))
         for name, df in [("prices", prices), ("dividends", dividends), ("volume", volume),
-                         ("shares", shares), ("benchmark", bench.to_frame("benchmark"))]:
+                         ("shares", shares), ("shares_source", shares_src), ("splits", splits),
+                         ("benchmark", bench.to_frame("benchmark"))]:
             df.to_csv(files[name])
 
     read = lambda k: pd.read_csv(files[k], index_col=0, parse_dates=True)
     prices = read("prices").dropna(axis=1, how="all")
     cols = prices.columns
-    iwf = pd.Series(1.0, index=cols)  # see README: free-float factors need an NSE data feed
+    shares = read("shares").reindex(columns=cols)
+    shares_src = read("shares_source").reindex(columns=cols)
+    splits = read("splits").reindex(columns=cols).fillna(0.0)
+    iwf: pd.Series | pd.DataFrame = pd.Series(1.0, index=cols)
+    iwf_source = "assumed_one"
+
+    if cfg.shareholding_file:
+        sh_shares, sh_iwf = load_shareholding(cfg.shareholding_file, prices.index, cols,
+                                              cfg.shareholding_lag_days)
+        sh_shares = restate_to_current_basis(sh_shares, splits)
+        have = sh_shares.notna()
+        shares = shares.where(~have, sh_shares)
+        shares_src = shares_src.where(~have, SHAREHOLDING)
+        iwf = sh_iwf
+        iwf_source = "shareholding_file"
+        log.info("Shareholding file applied: %.0f%% of stock-days have point-in-time data",
+                 100 * have.to_numpy().mean())
+
     return MarketData(
         prices=prices,
         dividends=read("dividends").reindex(columns=cols),
-        shares=read("shares").reindex(columns=cols),
+        shares=shares,
         volume=read("volume").reindex(columns=cols),
         iwf=iwf,
         sectors=pd.Series(cfg.universe).reindex(cols),
         benchmark=read("benchmark")["benchmark"],
         source="yahoo",
+        shares_source=shares_src,
+        iwf_source=iwf_source,
     )
 
 
-def _shares_history(tickers, index, splits: pd.DataFrame | None) -> pd.DataFrame:
-    """Best-effort point-in-time shares outstanding on the same split-adjusted basis as
-    Yahoo's `Close`. Falls back to the current share count when history is unavailable."""
+def split_factor_after(splits: pd.DataFrame) -> pd.DataFrame:
+    """For each date, the product of split ratios that occur strictly AFTER it.
+    Multiplying an as-reported share count by this restates it to today's basis."""
+    sf = splits.replace(0, 1.0).fillna(1.0)
+    return sf[::-1].cumprod()[::-1].shift(-1).fillna(1.0)
+
+
+def restate_to_current_basis(shares: pd.DataFrame, splits: pd.DataFrame) -> pd.DataFrame:
+    f = split_factor_after(splits.reindex(index=shares.index, columns=shares.columns).fillna(0.0))
+    return shares * f
+
+
+def load_shareholding(path: str | Path, index: pd.DatetimeIndex, tickers,
+                      lag_days: int = 21) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Read a shareholding-pattern file (e.g. a Capitaline export) with columns
+    date, ticker, shares_outstanding, promoter_holding_pct.
+
+    * `date` is the quarter-end the pattern refers to. Listed companies publish it about
+      three weeks later, so each record becomes usable only `lag_days` calendar days
+      after `date` (no look-ahead).
+    * IWF = 1 − promoter holding. NSE also excludes some other locked-in holdings, so this
+      is an approximation of the official factor.
+    * Dates before a company's first record stay NaN (the caller keeps the Yahoo value
+      and its provenance), never back-filled.
+    """
+    df = pd.read_csv(path)
+    df.columns = [c.strip().lower() for c in df.columns]
+    need = {"date", "ticker", "shares_outstanding", "promoter_holding_pct"}
+    if not need <= set(df.columns):
+        raise ValueError(f"shareholding file needs columns {sorted(need)}, got {list(df.columns)}")
+    df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
+    df.loc[~df["ticker"].str.contains(r"\.", regex=True), "ticker"] += ".NS"
+    df["available"] = pd.to_datetime(df["date"]) + pd.Timedelta(days=lag_days)
+    df["iwf"] = (1 - df["promoter_holding_pct"].astype(float) / 100).clip(0.05, 1.0)
+    out_sh, out_iwf = {}, {}
+    for t in tickers:
+        g = df[df["ticker"] == t].sort_values("available")
+        if g.empty:
+            out_sh[t] = pd.Series(np.nan, index=index)
+            out_iwf[t] = pd.Series(np.nan, index=index)
+            continue
+        g = g.drop_duplicates("available", keep="last").set_index("available")
+        out_sh[t] = g["shares_outstanding"].astype(float).reindex(index, method="ffill")
+        out_iwf[t] = g["iwf"].reindex(index, method="ffill")
+    return pd.DataFrame(out_sh, index=index), pd.DataFrame(out_iwf, index=index)
+
+
+def _retry(fn, ok=lambda x: True, what="request", attempts=4, base_sleep=2.0):
+    """Call fn() until ok(result) holds, backing off between attempts (Yahoo rate-limits)."""
+    for i in range(attempts):
+        try:
+            res = fn()
+            if ok(res):
+                return res
+        except Exception as e:  # noqa: BLE001 - yfinance raises many exception types
+            log.debug("%s failed (attempt %d): %s", what, i + 1, e)
+        if i < attempts - 1:
+            time.sleep(base_sleep * (2 ** i))
+    return None
+
+
+def _download_prices(yf, tickers, start, end, batch=10) -> dict[str, pd.DataFrame]:
+    """Download in small batches, then retry any ticker that came back empty, one at a time."""
+    fields = ("Close", "Dividends", "Volume", "Stock Splits")
+    parts = {f: [] for f in fields}
+
+    def fetch(group):
+        raw = yf.download(group, start=start, end=end, auto_adjust=False, actions=True,
+                          group_by="column", progress=False, threads=False)
+        if raw is None or raw.empty:
+            return None
+        raw.index = pd.to_datetime(raw.index).tz_localize(None)
+        if not isinstance(raw.columns, pd.MultiIndex):  # single ticker, flat columns
+            raw.columns = pd.MultiIndex.from_product([raw.columns, group])
+        return raw
+
+    def add(raw, group):
+        lvl0 = raw.columns.get_level_values(0)
+        for f in fields:
+            df = raw[f] if f in lvl0 else pd.DataFrame(np.nan, index=raw.index, columns=group)
+            parts[f].append(df.reindex(columns=group))
+
+    for i in range(0, len(tickers), batch):
+        group = tickers[i:i + batch]
+        raw = _retry(lambda: fetch(group), ok=lambda r: r is not None, what=f"batch {group[0]}..")
+        if raw is not None:
+            add(raw, group)
+        time.sleep(1.0)
+
+    out = {f: (pd.concat(parts[f], axis=1) if parts[f] else pd.DataFrame()) for f in fields}
+    out = {f: df.loc[:, ~df.columns.duplicated()].reindex(columns=tickers) for f, df in out.items()}
+    for t in [t for t in tickers if out["Close"][t].notna().sum() == 0]:
+        log.info("Retrying %s on its own...", t)
+        raw = _retry(lambda: fetch([t]), ok=lambda r: r is not None and r["Close"].notna().any().any(),
+                     what=t)
+        if raw is not None:
+            idx = out["Close"].index.union(raw.index)
+            for f in fields:
+                out[f] = out[f].reindex(idx)
+                if f in raw.columns.get_level_values(0):
+                    out[f][t] = raw[f][t].reindex(idx)
+        time.sleep(1.0)
+    return out
+
+
+def _shares_history(tickers, index, splits: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Best-effort shares outstanding on the same split-adjusted basis as Yahoo's `Close`,
+    plus a provenance code per date: point-in-time where a reported count exists, otherwise
+    back-filled or today's count (both look-ahead, and flagged as such in the report)."""
     import yfinance as yf
 
-    out = {}
+    def current_count(tk):
+        return float(tk.fast_info["shares"])
+
+    def history(tk):
+        h = tk.get_shares_full(start=index[0].strftime("%Y-%m-%d"))
+        return h if h is not None and len(h) else None
+
+    out, src = {}, {}
     for t in tickers:
         tk = yf.Ticker(t)
-        current = None
-        try:
-            current = float(tk.fast_info["shares"])
-        except Exception:  # noqa: BLE001 - yfinance raises many exception types
-            pass
+        current = _retry(lambda: current_count(tk), ok=lambda x: x and x > 0, what=f"{t} shares", attempts=3)
+        hist = _retry(lambda: history(tk), ok=lambda h: h is not None, what=f"{t} share history", attempts=3)
         series = None
-        try:
-            hist = tk.get_shares_full(start=index[0].strftime("%Y-%m-%d"))
-            if hist is not None and len(hist):
-                hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
-                hist = hist[~hist.index.duplicated(keep="last")].sort_index()
-                series = hist.reindex(index, method="ffill")
-                if splits is not None and t in splits:
-                    # restate historic share counts onto today's split-adjusted basis
-                    sf = splits[t].replace(0, 1.0).fillna(1.0)
-                    future_factor = sf[::-1].cumprod()[::-1].shift(-1).fillna(1.0)
-                    series = series * future_factor.reindex(index).fillna(1.0)
-                if current and (series.dropna() / current).between(0.33, 3).mean() < 0.8:
-                    series = None  # inconsistent history: don't trust it
-        except Exception:  # noqa: BLE001
-            series = None
+        if hist is not None:
+            hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+            hist = hist[~hist.index.duplicated(keep="last")].sort_index()
+            series = hist.reindex(index, method="ffill")
+            if t in splits:
+                series = series * split_factor_after(splits[[t]])[t].reindex(index).fillna(1.0)
+            if current and (series.dropna() / current).between(0.33, 3).mean() < 0.8:
+                series = None  # inconsistent history: don't trust it
         if series is None:
-            series = pd.Series(current if current else np.nan, index=index)
-        out[t] = series
-    return pd.DataFrame(out, index=index).ffill().bfill()
+            out[t] = pd.Series(current if current else np.nan, index=index)
+            src[t] = pd.Series(CURRENT, index=index)
+        else:
+            out[t] = series
+            src[t] = pd.Series(np.where(series.notna(), PIT, BACKFILLED), index=index)
+        time.sleep(0.3)
+    return pd.DataFrame(out, index=index).ffill().bfill(), pd.DataFrame(src, index=index)
 
 
 def load_market_data(cfg: IndexConfig, refresh: bool = False) -> MarketData:
