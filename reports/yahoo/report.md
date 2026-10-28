@@ -10,31 +10,50 @@
 
 ## Performance and risk
 
-| Metric | Index PR | Benchmark PR | Index TR | Index NET |
-|---|---:|---:|---:|---:|
-| CAGR | 14.25% | 13.49% | 16.13% | 16.11% |
-| Volatility (ann.) | 15.49% | 16.13% | 15.47% | 15.47% |
-| Sharpe | 0.52 | 0.46 | 0.62 | 0.62 |
-| Sortino | 0.71 | 0.63 | 0.86 | 0.86 |
-| Max drawdown | -35.81% | -38.44% | -35.35% | -35.35% |
-| Calmar | 0.40 | 0.35 | 0.46 | 0.46 |
-| 1-day VaR 95% | 1.35% | 1.37% | 1.35% | 1.35% |
-| 1-day CVaR 95% | 2.23% | 2.35% | 2.22% | 2.22% |
-| Skew | -1.03 | -1.12 | -0.98 | -0.98 |
-| Excess kurtosis | 20.08 | 20.17 | 19.38 | 19.38 |
-| Best month | 12.83% | 14.68% | 12.83% | 12.83% |
-| Worst month | -20.53% | -23.25% | -19.99% | -20.00% |
-| Beta | 0.95 | – | – | – |
-| Jensen's alpha (ann.) | 0.97% | – | – | – |
-| Correlation | 0.98 | – | – | – |
-| Tracking error | 2.90% | – | – | – |
-| Active return (CAGR diff) | 0.75% | – | – | – |
-| Information ratio | 0.19 | – | – | – |
-| Up capture | 0.96 | – | – | – |
-| Down capture | 0.95 | – | – | – |
-| Monthly hit rate | 50.43% | – | – | – |
+Comparisons are strictly like-for-like, so price return and total return are shown in **separate tables**.
 
-Comparisons are strictly like-for-like. The headline chart and the relative statistics in the **Index PR** column compare the index's **price return** with the NIFTY 50 **price return**.
+**Price return vs price return** (the headline comparison):
+
+| Metric | Index PR | NIFTY 50 PR |
+|---|---:|---:|
+| CAGR | 14.25% | 13.49% |
+| Volatility (ann.) | 15.49% | 16.13% |
+| Sharpe | 0.52 | 0.46 |
+| Sortino | 0.71 | 0.63 |
+| Max drawdown | -35.81% | -38.44% |
+| Calmar | 0.40 | 0.35 |
+| 1-day VaR 95% | 1.35% | 1.37% |
+| 1-day CVaR 95% | 2.23% | 2.35% |
+| Skew | -1.03 | -1.12 |
+| Excess kurtosis | 20.08 | 20.17 |
+| Best month | 12.83% | 14.68% |
+| Worst month | -20.53% | -23.25% |
+| Beta | 0.95 | – |
+| Jensen's alpha (ann.) | 0.97% | – |
+| Correlation | 0.98 | – |
+| Tracking error | 2.90% | – |
+| Active return (CAGR diff) | 0.75% | – |
+| Information ratio | 0.19 | – |
+| Up capture | 0.96 | – |
+| Down capture | 0.95 | – |
+| Monthly hit rate | 50.43% | – |
+
+**Total return** (dividends reinvested; NET after transaction costs):
+
+| Metric | Index TR (gross) | Index NET (after costs) |
+|---|---:|---:|
+| CAGR | 16.13% | 16.11% |
+| Volatility (ann.) | 15.47% | 15.47% |
+| Sharpe | 0.62 | 0.62 |
+| Sortino | 0.86 | 0.86 |
+| Max drawdown | -35.35% | -35.35% |
+| Calmar | 0.46 | 0.46 |
+| 1-day VaR 95% | 1.35% | 1.35% |
+| 1-day CVaR 95% | 2.22% | 2.22% |
+| Skew | -0.98 | -0.98 |
+| Excess kurtosis | 19.38 | 19.38 |
+| Best month | 12.83% | 12.83% |
+| Worst month | -19.99% | -20.00% |
 
 **Total return is not compared with a benchmark** in this run: no NIFTY 50 Total Returns Index was supplied, and comparing the index's TR with a price index would overstate it by roughly the dividend yield. Set `data.benchmark_tri_file` to add a TR vs TRI comparison. The index's TR and NET figures above are absolute numbers only.
 
@@ -48,7 +67,7 @@ Comparisons are strictly like-for-like. The headline chart and the relative stat
 
 ## What drives the result
 
-- **Size of the gap.** Price return vs price return, the index's CAGR differs from the NIFTY 50's by **+0.75% a year** (95% interval [-0.77%, 2.49%]), so the difference is **not** statistically distinguishable from zero.
+- **Size of the gap.** Price return vs price return, the index's CAGR differs from the NIFTY 50's by **+0.75% a year** (95% interval [-0.77%, 2.49%]), so the difference is **not** statistically distinguishable from zero: the data are consistent with anything from underperformance to meaningful outperformance, so the result is not statistically conclusive.
 - **Which rule drives it.** Universe choice +1.17% (not significant); Top-40 cut -0.70% (significant); Stock & sector caps +0.28% (not significant). The largest single effect is **universe choice**.
 - **Universe choice is where survivorship bias shows up.** That step compares an index of all candidates with the real NIFTY 50. The candidates are today's large caps, so they include companies that grew into the list and exclude ones that fell out of it. Treat the +1.17% as likely overstated, partly an artefact of the fixed candidate list rather than of the index rules.
 - **Sector view of the rules.** Against the parent universe, Brinson-Fachler splits the cumulative (not annual) effect of the top-40 cut and caps into allocation +6.91%, selection -20.55% and interaction +1.12% (see the attribution section).
@@ -98,9 +117,9 @@ Same universe, selection rules and rebalance calendar; only the weighting change
 
 ![variants](charts/variants.png)
 
-## Sector exposure and attribution
+## Sector exposure and attribution (vs the parent universe, not the NIFTY 50)
 
-Brinson-Fachler attribution of the index against its **parent universe** (all eligible names, uncapped float-cap weights), per holding period, Carino-linked.
+This section uses a **different benchmark** from the rest of the report. Brinson-Fachler needs the benchmark's stock weights at every rebalance, which are not available for the NIFTY 50, so the index is compared with its **parent universe**: all eligible candidates, uncapped market-cap weights. It therefore measures the effect of the index's own rules (top-40 cut and caps) by sector. A negative result here is not inconsistent with outperforming the NIFTY 50; the rules bridge above links the two benchmarks. Computed per holding period and Carino-linked.
 Index 257.11% vs parent 269.63% → active -12.52% =
 allocation 6.91% + selection -20.55% + interaction 1.12% (residual -1.1e-15).
 
@@ -147,9 +166,21 @@ Bottom 5
 | COALINDIA | Energy | -0.00% | 1.83% | 2409 |
 | INDUSINDBK | Financials | 0.05% | 1.16% | 1544 |
 
-## Rebalancing
+## Rebalancing and costs
 
 ![turnover](charts/turnover.png)
+
+**Cost convention.** At each rebalance the cost is (cost in bps) × Σ|new weight − drifted weight|, i.e. charged on the total notional traded, buys plus sells. One-way turnover is half that sum: 1.98% per rebalance on average, 4.0 rebalances a year. The base case is 10 bps.
+
+**Sensitivity of the net return to the cost assumption:**
+
+| Cost assumption | NET CAGR | Drag vs gross TR |
+|---|---:|---:|
+| 10 bps | 16.10% | 0.02% |
+| 25 bps | 16.07% | 0.05% |
+| 50 bps | 16.03% | 0.09% |
+
+**Cap drift between rebalances.** Caps apply **at each rebalance**: the largest target weight is 10.00% (cap 10%). Between rebalances, index shares are fixed, so weights drift with prices. Just before the next rebalance, the largest stock weight averaged 9.94% (peak 14.06%) and exceeded the cap in 17 of 38 periods; the largest sector reached 29.41% (cap 35%). Each rebalance resets weights to within the caps. Today the largest weight is RELIANCE at 10.69%, which is drift since the last rebalance, not a capping failure.
 
 Most recent rebalances (full log in `rebalance_log.csv`):
 
@@ -219,4 +250,4 @@ Limitations:
 - **Benchmark.** NIFTY 50 price index only; the index's total return is not benchmarked until a NIFTY 50 TRI file is supplied.
 - **Corporate actions.** Splits via split-adjusted prices; spin-offs and rights issues are not modelled.
 
-Run log: `run_log.json` (2026-10-28T20:26:01+00:00, checks passed 9/9, config hash `5e80518b00643f14`).
+Run log: `run_log.json` (2026-10-28T20:41:21+00:00, checks passed 9/9, config hash `5e80518b00643f14`).

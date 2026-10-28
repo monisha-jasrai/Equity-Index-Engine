@@ -91,3 +91,53 @@ def test_total_return_benchmarked_against_tri(md, cfg, tmp_path):
     assert "Benchmark TRI" in res["stats"]
     assert "beta" in res["stats"]["Index NET"]
     assert (tmp_path / "out2" / "charts" / "growth_tr.png").exists()
+
+
+# ------------------------------------------------------------------ costs, drift, README
+from index_engine.pipeline import (RESULTS_END, RESULTS_START, cap_drift, cost_sensitivity,
+                                   update_readme)
+
+
+def test_cost_sensitivity_matches_engine_at_base_case(md, cfg):
+    res = run_backtest(md, cfg)
+    cs = cost_sensitivity(res, cfg)
+    lv = res.levels["NET"]
+    years = len(lv) / cfg.periods_per_year
+    engine_net = (lv.iloc[-1] / lv.iloc[0]) ** (1 / years) - 1
+    assert cs.loc[f"{cfg.transaction_cost_bps:g} bps", "net_cagr"] == pytest.approx(engine_net, rel=1e-9)
+    assert cs["net_cagr"].is_monotonic_decreasing          # higher costs, lower net return
+
+
+def test_cap_drift_reports_pre_rebalance_weights(md, cfg):
+    res = run_backtest(md, cfg)
+    d = cap_drift(res, md, cfg)
+    assert d["max_stock_at_rebalance"] <= cfg.single_stock_cap + 1e-9
+    assert d["max_stock_before_rebalance"] >= d["avg_max_stock_before_rebalance"]
+    assert 0 <= d["quarters_stock_above_cap"] <= d["n_periods"]
+
+
+def test_update_readme_replaces_only_the_results_block(tmp_path):
+    summary = {
+        "start": "2016-03-31", "end": "2025-12-31", "n_candidates": 56, "n_with_data": 55,
+        "weighting_basis": "full market cap", "checks_passed": "9/9", "bootstrap_net_vs_tri": None,
+        "stats": {"Index PR": {"cagr": .14, "volatility": .15, "sharpe": .5, "max_drawdown": -.3,
+                               "beta": .95, "tracking_error": .03},
+                  "Benchmark PR": {"cagr": .13, "volatility": .16, "sharpe": .45, "max_drawdown": -.38},
+                  "Index TR": {"cagr": .16}},
+        "bootstrap": {}, "cost_sensitivity": {"10 bps": {"net_cagr": .16}},
+        "rules_bridge": {"NIFTY 50": {"value": .13}, "Universe choice": {"value": .01, "ci_low": -.01, "ci_high": .03},
+                         "Total gap (index − NIFTY)": {"value": .01, "ci_low": -.01, "ci_high": .03},
+                         "Index": {"value": .14}},
+    }
+    readme = tmp_path / "README.md"
+    readme.write_text(f"intro\n{RESULTS_START}\nold\n{RESULTS_END}\noutro\n")
+    out = tmp_path / "reports" / "yahoo"
+    out.mkdir(parents=True)
+    assert update_readme(readme, summary, out)
+    text = readme.read_text()
+    assert text.startswith("intro\n") and text.endswith("outro\n") and "old" not in text
+    assert "14.00%" in text and "not statistically conclusive" in text
+    assert "reports/yahoo/report.md" in text
+    no_markers = tmp_path / "plain.md"
+    no_markers.write_text("nothing here")
+    assert not update_readme(no_markers, summary, out)

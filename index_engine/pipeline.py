@@ -5,6 +5,7 @@ import json
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from . import analytics as an
@@ -33,7 +34,8 @@ def parent_universe(md: MarketData, cfg: IndexConfig) -> BacktestResult:
 
 
 def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False,
-        config_path: str | None = None, argv: list[str] | None = None) -> dict:
+        config_path: str | None = None, argv: list[str] | None = None,
+        readme_path: str | Path | None = None) -> dict:
     out = Path(out_dir)
     (out / "charts").mkdir(parents=True, exist_ok=True)
     md = load_market_data(cfg, refresh=refresh)
@@ -89,6 +91,9 @@ def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False,
     bridge = rules_bridge(b, parent.returns["PR"], uncapped.returns["PR"], r["PR"], cfg)
     robust = period_robustness(r["PR"], b, ppy)
 
+    costs = cost_sensitivity(main, cfg)
+    drift = cap_drift(main, md, cfg)
+
     attr = brinson_fachler(main, parent, md)
     contrib = contributions(main, md)
     rt = main.rebalance_table()
@@ -113,6 +118,7 @@ def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False,
     attr["periods"].to_csv(out / "attribution_by_period.csv", index=False)
     var_table.to_csv(out / "variant_comparison.csv")
     bridge.to_csv(out / "rules_bridge.csv")
+    costs.to_csv(out / "cost_sensitivity.csv")
 
     basis = ("free-float market cap" if md.is_free_float else "full market cap (IWF = 1)")
     universe_note = "simulated market" if md.source == "synthetic" else "fixed candidate universe"
@@ -147,7 +153,7 @@ def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False,
 
     md_text = _render_markdown(cfg, md, main, stats, boot, dd, cal, var_table, attr, contrib,
                                holdings, rt, charts, checks, prov, log_data,
-                               bridge, robust, has_tri, boot_tr)
+                               bridge, robust, has_tri, boot_tr, costs, drift)
     (out / "report.md").write_text(md_text)
     summary = {"config": cfg.name, "source": md.source, "start": str(idx[0].date()),
                "end": str(idx[-1].date()), "rebalances": len(main.rebalances),
@@ -157,10 +163,119 @@ def run(cfg: IndexConfig, out_dir: str | Path, refresh: bool = False,
                "checks_passed": log_data["checks_passed"],
                "rules_bridge": bridge[["value", "ci_low", "ci_high"]].to_dict(orient="index"),
                "period_robustness": {k: v for k, v in robust.items() if k != "by_year"},
-               "bootstrap_net_vs_tri": boot_tr}
+               "bootstrap_net_vs_tri": boot_tr,
+               "cost_sensitivity": costs.to_dict(orient="index"),
+               "cap_drift": drift,
+               "n_candidates": len(cfg.universe), "n_with_data": len(md.tickers)}
     (out / "summary.json").write_text(json.dumps(summary, indent=2, default=float))
+    if md.source == "yahoo" and readme_path is not None:
+        update_readme(Path(readme_path), summary, out)
     return {"md": md, "main": main, "variants": variants, "parent": parent, "stats": stats,
             "attribution": attr, "summary": summary, "checks": checks, "provenance": prov}
+
+
+def cost_sensitivity(res: BacktestResult, cfg: IndexConfig, bps_list=(10, 25, 50)) -> pd.DataFrame:
+    """Rebuild the NET series at several cost levels from the same trades.
+
+    Convention: at each rebalance the cost is bps × Σ|w_new − w_drifted|, i.e. charged on the
+    total notional traded (buys + sells). One-way turnover is half of that sum."""
+    tr = res.levels["TR"]
+    traded = pd.Series({r.date: 2 * r.one_way_turnover for r in res.rebalances[1:]})
+    years = len(tr) / cfg.periods_per_year
+    tr_cagr = (tr.iloc[-1] / tr.iloc[0]) ** (1 / years) - 1
+    rows = {}
+    for bps in sorted(set(bps_list) | {cfg.transaction_cost_bps}):
+        factor = float((1 - traded * bps / 1e4).prod())
+        net_cagr = (tr.iloc[-1] * factor / tr.iloc[0]) ** (1 / years) - 1
+        rows[f"{bps:g} bps"] = {"net_cagr": net_cagr, "drag_vs_tr": tr_cagr - net_cagr}
+    out = pd.DataFrame(rows).T
+    out.attrs["avg_one_way_turnover"] = float(traded.mean() / 2) if len(traded) else 0.0
+    out.attrs["rebalances_per_year"] = len(traded) / years
+    return out
+
+
+def cap_drift(res: BacktestResult, md: MarketData, cfg: IndexConfig) -> dict:
+    """Caps apply at each rebalance; between rebalances weights drift with prices.
+    Measure how far the largest stock and sector weights drift before the next rebalance."""
+    pre_stock, pre_sector = [], []
+    w = res.weights
+    for r in res.rebalances[1:]:
+        pos = w.index.get_loc(r.date)
+        if pos == 0:
+            continue
+        before = w.iloc[pos - 1]
+        pre_stock.append(float(before.max()))
+        pre_sector.append(float(before.groupby(md.sectors.reindex(before.index)).sum().max()))
+    last = w.iloc[-1]
+    return {
+        "stock_cap": cfg.single_stock_cap, "sector_cap": cfg.sector_cap,
+        "max_stock_at_rebalance": float(max(r.target_weights.max() for r in res.rebalances)),
+        "avg_max_stock_before_rebalance": float(np.mean(pre_stock)) if pre_stock else float("nan"),
+        "max_stock_before_rebalance": float(np.max(pre_stock)) if pre_stock else float("nan"),
+        "quarters_stock_above_cap": int(sum(x > cfg.single_stock_cap + 1e-9 for x in pre_stock)),
+        "max_sector_before_rebalance": float(np.max(pre_sector)) if pre_sector else float("nan"),
+        "n_periods": len(pre_stock),
+        "latest_max_stock": float(last.max()),
+        "latest_max_stock_name": str(last.idxmax()).replace(".NS", ""),
+    }
+
+
+RESULTS_START = "<!-- RESULTS:START (written automatically by `python -m index_engine --source yahoo`) -->"
+RESULTS_END = "<!-- RESULTS:END -->"
+
+
+def readme_results_block(summary: dict, out: Path) -> str:
+    st = summary["stats"]
+    ip, bp = st["Index PR"], st["Benchmark PR"]
+    boot = summary["bootstrap"]
+    br = summary["rules_bridge"]
+    tot = next(v for k, v in br.items() if k.startswith("Total"))
+    steps = {k: v for k, v in br.items() if k not in ("NIFTY 50", "Index") and not k.startswith("Total")}
+    sig = lambda v: "significant" if v["ci_low"] > 0 or v["ci_high"] < 0 else "not significant"
+    costs = summary["cost_sensitivity"]
+    rel = out.as_posix()
+    rows = [("CAGR", "cagr", "pct"), ("Annualised volatility", "volatility", "pct"),
+            ("Sharpe ratio", "sharpe", "num"), ("Maximum drawdown", "max_drawdown", "pct")]
+    f = lambda v, k: f"{v:.2%}" if k == "pct" else f"{v:.2f}"
+    table = "| Metric (price return) | Index | NIFTY 50 |\n|---|---:|---:|\n" + "\n".join(
+        f"| {lbl} | {f(ip[key], k)} | {f(bp[key], k)} |" for lbl, key, k in rows)
+    table += (f"\n| Beta / tracking error vs NIFTY 50 | {ip['beta']:.2f} / {ip['tracking_error']:.2%} | – |")
+    bridge_txt = "; ".join(f"{k.lower()} {v['value']:+.2%} ({sig(v)})" for k, v in steps.items())
+    cost_txt = ", ".join(f"{k}: {v['net_cagr']:.2%}" for k, v in costs.items())
+    return f"""{RESULTS_START}
+
+### Headline results
+
+Real NSE data (Yahoo Finance), {summary['start']} → {summary['end']}. A 40-stock index selected from a fixed list of {summary['n_candidates']} current large caps ({summary['n_with_data']} with data), weighted on **{summary['weighting_basis']}**, with 10% stock and 35% sector caps. Like-for-like: index **price return** vs NIFTY 50 **price return**.
+
+{table}
+
+**Interpretation.** The index's CAGR was {abs(tot['value']) * 100:.2f} percentage points a year {"higher" if tot['value'] >= 0 else "lower"} than the NIFTY 50's, with {"lower" if ip['volatility'] < bp['volatility'] else "higher"} realised volatility. The block-bootstrap 95% interval for the gap is [{tot['ci_low']:.2%}, {tot['ci_high']:.2%}], which {"excludes" if tot['ci_low'] > 0 or tot['ci_high'] < 0 else "includes"} zero: the data are consistent with anything from {"modest" if tot['ci_low'] > -0.02 else "meaningful"} underperformance to meaningful outperformance, so the result is **{"statistically conclusive" if tot['ci_low'] > 0 or tot['ci_high'] < 0 else "not statistically conclusive"}**. Splitting the gap by rule: {bridge_txt}. The universe-choice step reflects the fixed list of today's large caps, so it likely includes survivorship bias. None of this is evidence of a repeatable edge.
+
+Total return is {"compared with the NIFTY 50 TRI in the report" if summary.get("bootstrap_net_vs_tri") else "**not** benchmarked here (no NIFTY 50 TRI supplied); the index's TR of " + f"{st['Index TR']['cagr']:.2%}" + " must not be compared with the NIFTY's price return"}. Net-of-cost CAGR by cost assumption: {cost_txt}. Validation: {summary['checks_passed']} run-time checks passed.
+
+Full report: [`{rel}/report.md`]({rel}/report.md)
+
+{RESULTS_END}"""
+
+
+def update_readme(readme: Path, summary: dict, out: Path) -> bool:
+    """Replace the results block in the README so the front page always matches the latest
+    real-data run. Does nothing if the README or its markers are missing."""
+    if not readme.exists():
+        return False
+    text = readme.read_text()
+    if RESULTS_START not in text or RESULTS_END not in text:
+        return False
+    try:
+        rel_out = out.resolve().relative_to(readme.resolve().parent)
+    except ValueError:
+        return False
+    head, rest = text.split(RESULTS_START, 1)
+    _, tail = rest.split(RESULTS_END, 1)
+    readme.write_text(head + readme_results_block(summary, rel_out) + tail)
+    log.info("README results block updated from this run")
+    return True
 
 
 def rules_bridge(nifty: pd.Series, parent: pd.Series, uncapped: pd.Series, capped: pd.Series,
@@ -223,7 +338,9 @@ def _interpretation(bridge: pd.DataFrame, robust: dict, boot: dict, attr: dict) 
     lines = [
         f"- **Size of the gap.** Price return vs price return, the index's CAGR differs from the NIFTY 50's by "
         f"**{tot['value']:+.2%} a year** (95% interval [{tot['ci_low']:.2%}, {tot['ci_high']:.2%}]), so the "
-        f"difference is {'statistically distinguishable from zero' if significant(tot) else '**not** statistically distinguishable from zero'}.",
+        f"difference is {'statistically distinguishable from zero' if significant(tot) else '**not** statistically distinguishable from zero'}"
+        + ("." if significant(tot) else ": the data are consistent with anything from underperformance to "
+           "meaningful outperformance, so the result is not statistically conclusive."),
         "- **Which rule drives it.** " + "; ".join(
             f"{name} {row['value']:+.2%} ({sig_txt(row)})" for name, row in steps.iterrows())
         + f". The largest single effect is **{biggest.lower()}**.",
@@ -251,7 +368,7 @@ def _interpretation(bridge: pd.DataFrame, robust: dict, boot: dict, attr: dict) 
 
 def _render_markdown(cfg, md, main, stats, boot, dd, cal, var_table, attr, contrib,
                      holdings, rt, charts, checks, prov, log_data,
-                     bridge, robust, has_tri, boot_tr) -> str:
+                     bridge, robust, has_tri, boot_tr, costs, drift) -> str:
     idx = main.levels.index
     if md.source == "synthetic":
         src_note = ("> **Data source: SYNTHETIC.** Simulated multi-factor market used to demonstrate and "
@@ -277,6 +394,22 @@ def _render_markdown(cfg, md, main, stats, boot, dd, cal, var_table, attr, contr
         .rename(columns={"value": "CAGR / effect", "ci": "95% interval"}),
         pct_cols=("CAGR / effect",), index_name="Step")
     interp = _interpretation(bridge, robust, boot, attr)
+    pr_table = rp.metrics_table({"Index PR": stats["Index PR"], "NIFTY 50 PR": stats["Benchmark PR"]})
+    tr_cols = {"Index TR (gross)": stats["Index TR"], "Index NET (after costs)": stats["Index NET"]}
+    if has_tri:
+        tr_cols["NIFTY 50 TRI"] = stats["Benchmark TRI"]
+    tr_table = rp.metrics_table(tr_cols)
+    cost_md = rp.df_to_md(costs.rename(columns={"net_cagr": "NET CAGR", "drag_vs_tr": "Drag vs gross TR"}),
+                          pct_cols=("NET CAGR", "Drag vs gross TR"), index_name="Cost assumption")
+    drift_txt = (
+        f"Caps apply **at each rebalance**: the largest target weight is {drift['max_stock_at_rebalance']:.2%} "
+        f"(cap {drift['stock_cap']:.0%}). Between rebalances, index shares are fixed, so weights drift with prices. "
+        f"Just before the next rebalance, the largest stock weight averaged {drift['avg_max_stock_before_rebalance']:.2%} "
+        f"(peak {drift['max_stock_before_rebalance']:.2%}) and exceeded the cap in {drift['quarters_stock_above_cap']} of "
+        f"{drift['n_periods']} periods; the largest sector reached {drift['max_sector_before_rebalance']:.2%} "
+        f"(cap {drift['sector_cap']:.0%}). Each rebalance resets weights to within the caps. Today the largest weight is "
+        f"{drift['latest_max_stock_name']} at {drift['latest_max_stock']:.2%}, which is drift since the last rebalance, "
+        f"not a capping failure.")
     if has_tri:
         tr_note = (f"Total return is compared separately: **index NET (total return after costs) vs NIFTY 50 TRI**. "
                    f"Bootstrap active return {boot_tr['active_mean_annual']:.2%}, 95% interval "
@@ -323,9 +456,15 @@ def _render_markdown(cfg, md, main, stats, boot, dd, cal, var_table, attr, contr
 
 ## Performance and risk
 
-{rp.metrics_table(stats)}
+Comparisons are strictly like-for-like, so price return and total return are shown in **separate tables**.
 
-Comparisons are strictly like-for-like. The headline chart and the relative statistics in the **Index PR** column compare the index's **price return** with the NIFTY 50 **price return**.{" Relative statistics in the Index TR and NET columns are against the NIFTY 50 TRI." if has_tri else ""}
+**Price return vs price return** (the headline comparison):
+
+{pr_table}
+
+**Total return** (dividends reinvested; NET after transaction costs){" vs the NIFTY 50 TRI" if has_tri else ""}:
+
+{tr_table}
 
 {tr_note}
 
@@ -359,9 +498,9 @@ Same universe, selection rules and rebalance calendar; only the weighting change
 
 ![variants](charts/{charts['variants']})
 
-## Sector exposure and attribution
+## Sector exposure and attribution (vs the parent universe, not the NIFTY 50)
 
-Brinson-Fachler attribution of the index against its **parent universe** (all eligible names, uncapped float-cap weights), per holding period, Carino-linked.
+This section uses a **different benchmark** from the rest of the report. Brinson-Fachler needs the benchmark's stock weights at every rebalance, which are not available for the NIFTY 50, so the index is compared with its **parent universe**: all eligible candidates, uncapped market-cap weights. It therefore measures the effect of the index's own rules (top-40 cut and caps) by sector. A negative result here is not inconsistent with outperforming the NIFTY 50; the rules bridge above links the two benchmarks. Computed per holding period and Carino-linked.
 Index {totals['index_return']:.2%} vs parent {totals['benchmark_return']:.2%} → active {totals['active_return']:.2%} =
 allocation {totals['allocation']:.2%} + selection {totals['selection']:.2%} + interaction {totals['interaction']:.2%} (residual {totals['residual']:.1e}).
 
@@ -380,9 +519,17 @@ Bottom 5
 
 {fmt_ct(bot)}
 
-## Rebalancing
+## Rebalancing and costs
 
 ![turnover](charts/{charts['turnover']})
+
+**Cost convention.** At each rebalance the cost is (cost in bps) × Σ|new weight − drifted weight|, i.e. charged on the total notional traded, buys plus sells. One-way turnover is half that sum: {costs.attrs['avg_one_way_turnover']:.2%} per rebalance on average, {costs.attrs['rebalances_per_year']:.1f} rebalances a year. The base case is {cfg.transaction_cost_bps:g} bps.
+
+**Sensitivity of the net return to the cost assumption:**
+
+{cost_md}
+
+**Cap drift between rebalances.** {drift_txt}
 
 Most recent rebalances (full log in `rebalance_log.csv`):
 

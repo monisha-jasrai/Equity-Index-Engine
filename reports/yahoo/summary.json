@@ -131,5 +131,33 @@
     "active_ex_best_year": 0.0039017804170968784,
     "total_active": 0.007545460119118497
   },
-  "bootstrap_net_vs_tri": null
+  "bootstrap_net_vs_tri": null,
+  "cost_sensitivity": {
+    "10 bps": {
+      "net_cagr": 0.16100790312564262,
+      "drag_vs_tr": 0.00018265216509671944
+    },
+    "25 bps": {
+      "net_cagr": 0.160733955558785,
+      "drag_vs_tr": 0.00045659973195433246
+    },
+    "50 bps": {
+      "net_cagr": 0.160277458089086,
+      "drag_vs_tr": 0.0009130972016533345
+    }
+  },
+  "cap_drift": {
+    "stock_cap": 0.1,
+    "sector_cap": 0.35,
+    "max_stock_at_rebalance": 0.10000000000000003,
+    "avg_max_stock_before_rebalance": 0.09936830089605793,
+    "max_stock_before_rebalance": 0.1406394468855467,
+    "quarters_stock_above_cap": 17,
+    "max_sector_before_rebalance": 0.29406043153230593,
+    "n_periods": 38,
+    "latest_max_stock": 0.10691369170838749,
+    "latest_max_stock_name": "RELIANCE"
+  },
+  "n_candidates": 56,
+  "n_with_data": 55
 }

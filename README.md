@@ -2,17 +2,35 @@
 
 ![tests](https://github.com/monisha-jasrai/Equity-Index-Engine/actions/workflows/tests.yml/badge.svg)
 
-A rules-based engine that **constructs, calculates and back-tests a capped market-cap weighted equity index** of 40 NSE-listed stocks and evaluates it against the NIFTY 50 with risk, benchmark-relative and attribution analytics.
+**A 40-stock, capped market-cap weighted index of NSE large caps, selected from a fixed list of 56 candidates, weighted on full market cap, and back-tested from 2016 to 2025 against the NIFTY 50.**
 
-The index is calculated the way index providers (NSE Indices, S&P DJI, MSCI) do it: **index shares and a divisor**, with the divisor reset at every quarterly rebalance so the level stays continuous. The framework is **free-float-ready**: it weights on float-adjusted market cap whenever point-in-time free-float factors are supplied (for example, shareholding patterns exported from Capitaline).
+The index is calculated the way index providers (NSE Indices, S&P DJI, MSCI) do it: **index shares and a divisor**, with the divisor reset at every quarterly rebalance so the level stays continuous. The framework is **free-float-ready**: it can weight on free-float market cap when point-in-time free-float data is supplied, but the results below use **full market cap** because historical free-float data was not available.
 
 ![growth](reports/yahoo/charts/growth.png)
 
-> **What the reported results are.** Real NSE data (Yahoo Finance), March 2016 – December 2025: a **capped market-cap weighted index** on **full market cap** (no historical free-float factors were available, so IWF = 1), over a **fixed candidate list of today's large caps**. Read them as a *fixed-candidate-universe study*, not a reconstruction of a historical free-float index.
->
-> **The chart compares like with like:** the index's **price return** against the NIFTY 50 **price return**. Total return is only benchmarked against the NIFTY 50 **Total Returns Index** when that series is supplied; it is never compared with a price index. On real data the index tracks the NIFTY 50 closely, and the gap is **not statistically significant**.
->
-> Every report states its weighting basis, data provenance, validation results and what drives the gap. A seeded synthetic market is bundled so the code runs offline and in CI.
+<!-- RESULTS:START (written automatically by `python -m index_engine --source yahoo`) -->
+
+### Headline results
+
+Real NSE data (Yahoo Finance), 2016-03-31 → 2025-12-30. A 40-stock index selected from a fixed list of 56 current large caps (55 with data), weighted on **full market cap (IWF = 1: no historical free-float data)**, with 10% stock and 35% sector caps. Like-for-like: index **price return** vs NIFTY 50 **price return**.
+
+| Metric (price return) | Index | NIFTY 50 |
+|---|---:|---:|
+| CAGR | 14.25% | 13.49% |
+| Annualised volatility | 15.49% | 16.13% |
+| Sharpe ratio | 0.52 | 0.46 |
+| Maximum drawdown | -35.81% | -38.44% |
+| Beta / tracking error vs NIFTY 50 | 0.95 / 2.90% | – |
+
+**Interpretation.** The index's CAGR was 0.75 percentage points a year higher than the NIFTY 50's, with lower realised volatility. The block-bootstrap 95% interval for the gap is [-0.77%, 2.49%], which includes zero: the data are consistent with anything from modest underperformance to meaningful outperformance, so the result is **not statistically conclusive**. Splitting the gap by rule: universe choice +1.17% (not significant); top-40 cut -0.70% (significant); stock & sector caps +0.28% (not significant). The universe-choice step reflects the fixed list of today's large caps, so it likely includes survivorship bias. None of this is evidence of a repeatable edge.
+
+Total return is **not** benchmarked here (no NIFTY 50 TRI supplied); the index's TR of 16.13% must not be compared with the NIFTY's price return. Net-of-cost CAGR by cost assumption: 10 bps: 16.10%, 25 bps: 16.07%, 50 bps: 16.03%. Validation: 9/9 run-time checks passed.
+
+Full report: [`reports/yahoo/report.md`](reports/yahoo/report.md)
+
+<!-- RESULTS:END -->
+
+**How to read these results.** This is a *fixed-candidate-universe study*, not a reconstruction of a historical index: the candidates are today's large caps, so survivorship bias is likely, and weights use full market cap (investable weight factor = 1). Comparisons are like-for-like: price return vs price return, and total return only vs the NIFTY 50 Total Returns Index when supplied. A seeded synthetic market is bundled so the code runs offline and in CI.
 
 ---
 
@@ -20,10 +38,10 @@ The index is calculated the way index providers (NSE Indices, S&P DJI, MSCI) do 
 
 | Stage | Detail |
 |---|---|
-| **Universe & eligibility** | 56 NSE large-cap candidates across 10 sectors (a fixed list; see limitations). Point-in-time screens: price on the reference date, ≥ 6 months of trading history, minimum median daily traded value, valid sector. |
+| **Universe & eligibility** | A fixed list of 56 NSE large-cap candidates across 10 sectors, from which 40 are selected (not the full NSE universe or historical index membership; see limitations). Point-in-time screens: price on the reference date, ≥ 6 months of trading history, minimum median daily traded value, valid sector. |
 | **Selection** | Top 40 by float-adjusted market cap, with a **rank buffer** (incumbents keep their seat down to rank 48) to cut turnover from names flickering around the cutoff. |
 | **Weighting** | Market cap × investable weight factor (IWF) with an **iterative 10% single-stock cap and 35% sector cap**. IWF = 1 unless a point-in-time shareholding file is supplied. Four alternative schemes (uncapped, equal, inverse-volatility, √cap) for comparison. |
-| **Index calculation** | Divisor-based price-return (PR) level, gross total-return (TR) with dividend reinvestment, and an investable **NET** series charged transaction costs on actual rebalance turnover. |
+| **Index calculation** | Divisor-based price-return (PR) level, gross total-return (TR) with dividend reinvestment, and an investable **NET** series charged transaction costs on actual rebalance turnover, with a 10 / 25 / 50 bps cost sensitivity. |
 | **No look-ahead in selection** | Selection and weights use data snapshotted 5 trading days before the effective date; shareholding patterns are used only 21 days after their quarter-end (publication lag). |
 | **Analytics** | CAGR, volatility, Sharpe, Sortino, Calmar, max drawdown (with recovery), VaR/CVaR, skew/kurtosis, beta, Jensen's alpha, tracking error, information ratio, up/down capture, rolling 1-year beta/TE/excess return, calendar-year returns. |
 | **Like-for-like benchmarks** | Price return vs NIFTY 50 price return; total return (net of costs) vs the NIFTY 50 Total Returns Index when supplied, otherwise not benchmarked. |
@@ -31,7 +49,7 @@ The index is calculated the way index providers (NSE Indices, S&P DJI, MSCI) do 
 | **What drives the result** | A **rules bridge** splits the gap vs the NIFTY 50 into universe choice, the top-40 cut and the caps, each with a 95% interval; a period check shows whether the gap depends on one year. |
 | **Attribution** | **Brinson-Fachler** sector attribution per holding period, **Carino-linked** so effects sum exactly to the cumulative active return. |
 | **Validation & provenance** | Every run reconciles its own outputs (weights, caps, divisor, dividends, costs, attribution) and reports how much index weight rests on genuinely point-in-time share counts. A `run_log.json` records versions, config hash and data-file hashes for reproducibility. |
-| **Engineering** | Typed config, cached data layer with batched, retrying downloads, vectorised calculation, 26 unit tests, GitHub Actions CI. |
+| **Engineering** | Typed config, cached data layer with batched, retrying downloads, vectorised calculation, unit tests run in GitHub Actions CI. |
 
 ---
 
@@ -64,6 +82,7 @@ Each run writes to `reports/<source>/`:
 | `attribution_by_period.csv` | Brinson-Fachler effects per sector per holding period |
 | `variant_comparison.csv` | Weighting-scheme comparison |
 | `rules_bridge.csv` | Effect of each rule on the gap vs the NIFTY 50, with 95% intervals |
+| `cost_sensitivity.csv` | Net CAGR at 10, 25 and 50 bps |
 | `summary.json` | Headline results, weighting basis, checks passed |
 
 ---
@@ -99,7 +118,9 @@ Only shares available to public investors should count. The engine supports a **
 
 * **PR**: the level above. Dividends are ignored.
 * **TR**: $TR_t = TR_{t-1} \cdot \frac{\sum_i q_i (P_{i,t} + d_{i,t})}{\sum_i q_i P_{i,t-1}}$ — cash dividends reinvested across the index on the ex-date.
-* **NET**: TR × $(1 - c)$ at each rebalance, $c = \text{bps} \times \sum_i |w_i^{\text{new}} - w_i^{\text{drifted}}|$.
+* **NET**: TR × $(1 - c)$ at each rebalance, $c = \text{bps} \times \sum_i |w_i^{\text{new}} - w_i^{\text{drifted}}|$, i.e. cost charged on total notional traded (buys + sells); one-way turnover is half the sum. The report shows the net return at 10, 25 and 50 bps.
+
+**Caps apply at rebalances.** Between rebalances index shares are fixed, so a capped stock can drift above 10% as its price rises; the next rebalance resets it. The report measures this drift (largest weight just before each rebalance), so a current weight above 10% is expected, not a capping failure.
 
 Benchmark comparisons are strictly like-for-like: **index PR vs NIFTY 50 PR** (the Yahoo series is a price index), and **index NET vs NIFTY 50 TRI** only when a TRI file is supplied. Comparing the index's TR with a price index would flatter it by roughly the dividend yield (~1.5% a year), so the engine never does it.
 
@@ -125,7 +146,7 @@ The steps are differences of CAGRs, so they sum exactly to the total gap (tested
 
 ### 7. Attribution
 
-Brinson-Fachler against the **parent universe** (all eligible names, uncapped), isolating what the index rules (top-40 cutoff and caps) did:
+Brinson-Fachler against the **parent universe** (all eligible names, uncapped), **not the NIFTY 50**: sector-level attribution needs the benchmark's stock weights at every rebalance, which are not available for the NIFTY 50. It isolates what the index rules (top-40 cutoff and caps) did, by sector. A negative result here can coexist with a positive gap vs the NIFTY 50; the rules bridge (section 6) links the two benchmarks.
 
 ```math
 \text{Alloc}_s = (w^I_s - w^B_s)(r^B_s - R^B), \quad
@@ -141,7 +162,7 @@ Computed per holding period and linked with **Carino smoothing** so the effects 
 
 Two layers, because passing unit tests doesn't prove that real market data behaved as assumed.
 
-**Unit tests** (`python -m pytest`, 26 tests, run in CI on every commit) check the logic on controlled inputs: capping (including cascades and infeasible caps), divisor continuity, weights summing to one, TR ≥ PR, NET = TR at zero cost, the buffer reducing turnover, the rebalance calendar, attribution reconciliation, analytics on known series, the shareholding loader's publication lag and no back-fill, split restatement, that a full-market-cap run is never labelled free-float, that total return is never benchmarked against a price index, the TRI file loader, and that the rules bridge sums exactly to the total gap.
+**Unit tests** (`python -m pytest`, run in CI on every commit) check the logic on controlled inputs: capping (including cascades and infeasible caps), divisor continuity, weights summing to one, TR ≥ PR, NET = TR at zero cost, the buffer reducing turnover, the rebalance calendar, attribution reconciliation, analytics on known series, the shareholding loader's publication lag and no back-fill, split restatement, that a full-market-cap run is never labelled free-float, that total return is never benchmarked against a price index, the TRI file loader, and that the rules bridge sums exactly to the total gap.
 
 **Run-time checks** (every backtest, shown in `report.md` and `run_log.json`) reconcile the actual outputs:
 
@@ -159,10 +180,39 @@ Two layers, because passing unit tests doesn't prove that real market data behav
 
 ---
 
-## Results (real NSE data)
+## Charts (real NSE data)
 
-| | |
-|---|---|
+**What separates the index from the NIFTY 50.** Each rule's effect on the CAGR gap, with 95% bootstrap intervals.
+
+![bridge](reports/yahoo/charts/bridge.png)
+
+**Drawdowns** (price return vs price return).
+
+![drawdown](reports/yahoo/charts/drawdown.png)
+
+**Rolling one-year excess return and tracking error.**
+
+![rolling](reports/yahoo/charts/rolling.png)
+
+**Sector weights over time.**
+
+![sectors](reports/yahoo/charts/sector_weights.png)
+
+**Sector attribution vs the parent universe** (not the NIFTY 50).
+
+![attribution](reports/yahoo/charts/attribution.png)
+
+**Weighting schemes compared.**
+
+![variants](reports/yahoo/charts/variants.png)
+
+**Turnover at each rebalance.**
+
+![turnover](reports/yahoo/charts/turnover.png)
+
+Full tear sheet, including validation, data provenance, cost sensitivity and cap drift: [`reports/yahoo/report.md`](reports/yahoo/report.md).
+
+---|---|
 | ![drawdown](reports/yahoo/charts/drawdown.png) | ![rolling](reports/yahoo/charts/rolling.png) |
 | ![sectors](reports/yahoo/charts/sector_weights.png) | ![attribution](reports/yahoo/charts/attribution.png) |
 | ![variants](reports/yahoo/charts/variants.png) | ![turnover](reports/yahoo/charts/turnover.png) |
@@ -175,6 +225,7 @@ Full tear sheet, including validation and provenance: [`reports/yahoo/report.md`
 
 ## Limitations
 
+* **Small, fixed universe.** 40 stocks are chosen from a fixed list of 56 current large caps, not from the full NSE universe.
 * **Survivorship bias (separate from look-ahead bias).** The reference-date lag prevents look-ahead *within* the rules, but the candidate list itself is today's large caps. Companies that were large in 2016 and later shrank or delisted are missing, which flatters returns. Fix: historical index-constituent lists (point-in-time membership).
 * **Free float.** Reported real-data results use IWF = 1 (full market cap). Supplying a shareholding file makes the index genuinely free-float weighted.
 * **Share counts.** Yahoo's share history is patchy. Where it starts late, earlier dates are back-filled; where it's missing, today's count is used. The report quantifies how much index weight this affects.

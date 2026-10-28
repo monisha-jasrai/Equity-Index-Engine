@@ -27,7 +27,8 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_config(a.config, **overrides)
     out = a.out or f"reports/{cfg.source}"
     import sys
-    res = run(cfg, out, refresh=a.refresh, config_path=a.config, argv=["python -m index_engine", *sys.argv[1:]])
+    res = run(cfg, out, refresh=a.refresh, config_path=a.config, argv=["python -m index_engine", *sys.argv[1:]],
+              readme_path=None if a.out else "README.md")
     s = res["stats"]
     print(f"\n{cfg.name}  [{res['summary']['source']}]  {res['summary']['start']} -> {res['summary']['end']}")
     for k in [k for k in ("Index PR", "Benchmark PR", "Index TR", "Index NET", "Benchmark TRI") if k in s]:
