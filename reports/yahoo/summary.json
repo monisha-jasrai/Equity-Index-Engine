@@ -28,6 +28,20 @@
       "down_capture": 0.9464041887017285,
       "hit_rate_monthly": 0.5042735042735043
     },
+    "Benchmark PR": {
+      "cagr": 0.13494079770389344,
+      "volatility": 0.1612810471999776,
+      "sharpe": 0.4632901822039068,
+      "sortino": 0.6331285137536671,
+      "max_drawdown": -0.38439852452742096,
+      "calmar": 0.3510440053582138,
+      "var_95_1d": 0.013737757140372894,
+      "cvar_95_1d": 0.023450650875266547,
+      "skew": -1.1193139516981505,
+      "excess_kurtosis": 20.169433019358113,
+      "best_month": 0.14680008032624792,
+      "worst_month": -0.23246367755038266
+    },
     "Index TR": {
       "cagr": 0.1612626235877892,
       "volatility": 0.15467747898372905,
@@ -55,20 +69,6 @@
       "excess_kurtosis": 19.37932858114975,
       "best_month": 0.12825841220707157,
       "worst_month": -0.19996572754498643
-    },
-    "Benchmark PR": {
-      "cagr": 0.13494079770389344,
-      "volatility": 0.1612810471999776,
-      "sharpe": 0.4632901822039068,
-      "sortino": 0.6331285137536671,
-      "max_drawdown": -0.38439852452742096,
-      "calmar": 0.3510440053582138,
-      "var_95_1d": 0.013737757140372894,
-      "cvar_95_1d": 0.023450650875266547,
-      "skew": -1.1193139516981505,
-      "excess_kurtosis": 20.169433019358113,
-      "best_month": 0.14680008032624792,
-      "worst_month": -0.23246367755038266
     }
   },
   "bootstrap": {
@@ -88,5 +88,48 @@
   },
   "weighting_basis": "full market cap (IWF = 1: no historical free-float data)",
   "is_free_float": false,
-  "checks_passed": "9/9"
+  "checks_passed": "9/9",
+  "rules_bridge": {
+    "NIFTY 50": {
+      "value": 0.13494079770389344,
+      "ci_low": NaN,
+      "ci_high": NaN
+    },
+    "Universe choice": {
+      "value": 0.011673104602103024,
+      "ci_low": -0.00452135654153098,
+      "ci_high": 0.030112295795007536
+    },
+    "Top-40 cut": {
+      "value": -0.00696698793412609,
+      "ci_low": -0.011493877631111957,
+      "ci_high": -0.0026113058485200628
+    },
+    "Stock & sector caps": {
+      "value": 0.0028393434511415627,
+      "ci_low": -0.001055021938329863,
+      "ci_high": 0.007672721062919181
+    },
+    "Total gap (index \u2212 NIFTY)": {
+      "value": 0.007545460119118497,
+      "ci_low": -0.007733347882135118,
+      "ci_high": 0.02490241217941048
+    },
+    "Index": {
+      "value": 0.14248625782301194,
+      "ci_low": NaN,
+      "ci_high": NaN
+    }
+  },
+  "period_robustness": {
+    "years_positive": 7,
+    "n_years": 10,
+    "best_year": 2020,
+    "best_active": 0.039617243425227544,
+    "worst_year": 2023,
+    "worst_active": -0.010817464652775222,
+    "active_ex_best_year": 0.0039017804170968784,
+    "total_active": 0.007545460119118497
+  },
+  "bootstrap_net_vs_tri": null
 }

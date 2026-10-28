@@ -40,42 +40,67 @@ def _end_label(ax, s: pd.Series, text: str, color: str, dy: float = 0.0) -> None
     ax.plot(s.index[-1], s.iloc[-1], "o", ms=4, color=color, mec=SURFACE, mew=1.2)
 
 
-def chart_growth(levels: pd.DataFrame, bench: pd.Series, name: str, out: Path) -> str:
-    fig, ax = plt.subplots(figsize=(9, 4.6))
-    b = bench / bench.iloc[0] * levels["PR"].iloc[0]
-    series = [(levels["TR"], f"{name} TR", SERIES[0]),
-              (levels["PR"], f"{name} PR", SERIES[2]),
-              (b, "Benchmark PR", SERIES[1])]
-    # nudge end labels apart when final values are close (log-space gap < 4%)
-    ends = sorted(range(len(series)), key=lambda k: series[k][0].iloc[-1])
-    dys = [0.0] * len(series)
-    for lo, hi in zip(ends, ends[1:]):
-        if series[hi][0].iloc[-1] / series[lo][0].iloc[-1] < 1.04:
-            dys[lo] -= 5
-            dys[hi] += 5
-    for (s, lbl, c), dy in zip(series, dys):
-        ax.plot(s.index, s, color=c, label=lbl)
-        _end_label(ax, s, f"{s.iloc[-1]:,.0f}", c, dy)
+def chart_growth(index_lvl: pd.Series, bench: pd.Series, index_label: str, bench_label: str,
+                 title: str, subtitle: str, out: Path, fname: str) -> str:
+    """Growth of 1,000 for ONE like-for-like pair (PR vs PR, or TR vs TRI)."""
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    i = index_lvl / index_lvl.iloc[0] * 1000
+    b = bench.reindex(index_lvl.index).ffill()
+    b = b / b.iloc[0] * 1000
+    series = [(i, index_label, SERIES[0]), (b, bench_label, SERIES[1])]
+    hi, lo = (0, 1) if i.iloc[-1] >= b.iloc[-1] else (1, 0)
+    close = series[hi][0].iloc[-1] / series[lo][0].iloc[-1] < 1.04
+    for k, (s_, lbl, c) in enumerate(series):
+        ax.plot(s_.index, s_, color=c, label=lbl)
+        _end_label(ax, s_, f"{s_.iloc[-1]:,.0f}", c, (5 if k == hi else -5) if close else 0)
     ax.set_yscale("log")
     ax.yaxis.set_major_locator(mtick.LogLocator(base=10, subs=(1.0, 1.5, 2.0, 3.0, 5.0, 7.0)))
     ax.yaxis.set_major_formatter(mtick.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.yaxis.set_minor_formatter(mtick.NullFormatter())
-    ax.set_title("Growth of 1,000 (log scale)")
+    ax.set_title(title, pad=22)
+    ax.text(0, 1.02, subtitle, transform=ax.transAxes, fontsize=8.5, color=INK2, va="bottom")
     ax.legend(loc="upper left")
     ax.margins(x=0.06)
-    return _save(fig, out / "growth.png")
+    return _save(fig, out / fname)
 
 
-def chart_drawdown(r: pd.Series, b: pd.Series, out: Path) -> str:
+def chart_drawdown(r: pd.Series, b: pd.Series, r_label: str, b_label: str, out: Path) -> str:
     from .analytics import drawdown
     fig, ax = plt.subplots(figsize=(9, 3.2))
-    for s, lbl, c in [(drawdown(r), "Index TR", SERIES[0]), (drawdown(b), "Benchmark PR", SERIES[1])]:
-        ax.plot(s.index, s, color=c, label=lbl, lw=1.3)
+    for s_, lbl, c in [(drawdown(r), r_label, SERIES[0]), (drawdown(b), b_label, SERIES[1])]:
+        ax.plot(s_.index, s_, color=c, label=lbl, lw=1.3)
     ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=0))
     ax.axhline(0, color=AXIS, lw=0.8)
-    ax.set_title("Drawdown from running peak")
+    ax.set_title("Drawdown from running peak (price return vs price return)")
     ax.legend(loc="lower left")
     return _save(fig, out / "drawdown.png")
+
+
+def chart_bridge(bridge: pd.DataFrame, out: Path) -> str:
+    """Annualised effect of each index rule on the gap vs the NIFTY 50, with 95% bootstrap
+    intervals about zero, so the reader sees at a glance which effects are distinguishable from 0."""
+    eff = bridge[bridge["kind"].isin(["step", "total"])].iloc[::-1]
+    fig, ax = plt.subplots(figsize=(9, 0.62 * len(eff) + 1.6))
+    y = np.arange(len(eff))
+    for k, (name, row) in enumerate(eff.iterrows()):
+        v = row["value"]
+        color = SERIES[0] if row["kind"] == "total" else (SERIES[2] if v >= 0 else SERIES[7])
+        ax.barh(k, v, height=0.5, color=color)
+        ax.errorbar(v, k, xerr=[[v - row["ci_low"]], [row["ci_high"] - v]], fmt="none",
+                    ecolor=INK2, elinewidth=1.1, capsize=4)
+        ax.annotate(f"{v:+.2%}", (row["ci_high"], k), xytext=(6, 0), textcoords="offset points",
+                    va="center", fontsize=8.5, color=INK)
+    ax.axvline(0, color=INK2, lw=0.9)
+    ax.set_yticks(y, eff.index)
+    span = max(eff["ci_high"].abs().max(), eff["ci_low"].abs().max())
+    ax.set_xlim(-span * 1.15, span * 1.35)
+    ax.xaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=1))
+    ax.set_title("What separates the index from the NIFTY 50 (CAGR, price return)", pad=22)
+    ax.text(0, 1.02, "Annualised effect of each rule · whiskers = 95% block-bootstrap interval · "
+            "a whisker crossing 0 means not significant", transform=ax.transAxes, fontsize=8.5,
+            color=INK2, va="bottom")
+    ax.grid(axis="y", visible=False)
+    return _save(fig, out / "bridge.png")
 
 
 def chart_rolling(roll: pd.DataFrame, window: int, out: Path) -> str:

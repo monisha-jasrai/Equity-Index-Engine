@@ -1,5 +1,5 @@
 {
-  "run_at_utc": "2026-10-28T19:56:41+00:00",
+  "run_at_utc": "2026-10-28T20:26:01+00:00",
   "command": "python -m index_engine --source yahoo",
   "git_commit": null,
   "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
@@ -12,7 +12,7 @@
     "yfinance": "1.7.0"
   },
   "config_file": "config/india_large_cap_40.yaml",
-  "config_sha256": "d8989fa13d971f83",
+  "config_sha256": "5e80518b00643f14",
   "config": {
     "name": "India Large-Cap 40",
     "base_value": 1000.0,
@@ -24,6 +24,7 @@
     "benchmark_ticker": "^NSEI",
     "synthetic_seed": 42,
     "shareholding_file": null,
+    "benchmark_tri_file": null,
     "shareholding_lag_days": 21,
     "n_constituents": 40,
     "retain_rank": 48,

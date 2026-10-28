@@ -30,11 +30,19 @@ def main(argv: list[str] | None = None) -> None:
     res = run(cfg, out, refresh=a.refresh, config_path=a.config, argv=["python -m index_engine", *sys.argv[1:]])
     s = res["stats"]
     print(f"\n{cfg.name}  [{res['summary']['source']}]  {res['summary']['start']} -> {res['summary']['end']}")
-    for k in ("Index PR", "Index TR", "Index NET", "Benchmark PR"):
+    for k in [k for k in ("Index PR", "Benchmark PR", "Index TR", "Index NET", "Benchmark TRI") if k in s]:
         print(f"  {k:<13} CAGR {s[k]['cagr']:7.2%}   vol {s[k]['volatility']:6.2%}   "
               f"Sharpe {s[k]['sharpe']:5.2f}   maxDD {s[k]['max_drawdown']:7.2%}")
     pr = s["Index PR"]
-    print(f"  vs benchmark: beta {pr['beta']:.2f}  TE {pr['tracking_error']:.2%}  IR {pr['information_ratio']:.2f}")
+    print(f"  PR vs NIFTY PR: beta {pr['beta']:.2f}  TE {pr['tracking_error']:.2%}  IR {pr['information_ratio']:.2f}")
+    if "Benchmark TRI" in s:
+        nt = s["Index NET"]
+        print(f"  NET vs NIFTY TRI: active {nt['active_return']:+.2%}  TE {nt['tracking_error']:.2%}  IR {nt['information_ratio']:.2f}")
+    else:
+        print("  (no NIFTY 50 TRI supplied: total return is not benchmarked)")
+    br = res["summary"]["rules_bridge"]
+    print("  rules bridge (CAGR):  " + "  ".join(f"{k} {v['value']:+.2%}" if k not in ("NIFTY 50", "Index") and not k.startswith("Total")
+                                                else f"{k} {v['value']:.2%}" for k, v in br.items() if not k.startswith("Total")))
     print(f"  weighting basis: {res['md'].weighting_basis}")
     print(f"  validation checks passed: {res['summary']['checks_passed']}")
     print(f"\nReport written to {out}/report.md  (run log: {out}/run_log.json)")

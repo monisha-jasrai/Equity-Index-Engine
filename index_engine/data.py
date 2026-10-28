@@ -44,6 +44,7 @@ class MarketData:
     shares_source: pd.DataFrame | None = None  # date x ticker provenance code (see above)
     iwf_source: str = "assumed_one"            # assumed_one | synthetic | shareholding_file
     iwf_known: pd.DataFrame | None = None      # set in __post_init__
+    benchmark_tri: pd.Series | None = None     # optional total-return benchmark level
 
     def __post_init__(self) -> None:
         idx, cols = self.prices.index, self.prices.columns
@@ -59,6 +60,8 @@ class MarketData:
         self.shares_source = self.shares_source.mask(before_first, BACKFILLED)
         self.shares = self.shares.ffill().bfill()
         self.benchmark = self.benchmark.reindex(idx).ffill()
+        if self.benchmark_tri is not None:
+            self.benchmark_tri = self.benchmark_tri.reindex(idx).ffill()
         if isinstance(self.iwf, pd.DataFrame):
             raw = self.iwf.reindex(index=idx, columns=cols)
             self.iwf_known = raw.notna()               # False where IWF defaulted to 1
@@ -186,7 +189,10 @@ def make_synthetic(cfg: IndexConfig) -> MarketData:
     bench_ret = (w * P.pct_change(fill_method=None)).sum(axis=1) + rng.normal(0, 0.0015, T)
     bench = 10000.0 * (1 + bench_ret.fillna(0)).cumprod()
 
-    return MarketData(P, D, SH, V, iwf, sectors, bench, source="synthetic", iwf_source="synthetic")
+    # Synthetic total-return benchmark: the price benchmark plus a ~1.3% dividend yield.
+    tri = bench * (1 + 0.013 / 252) ** np.arange(T)
+    return MarketData(P, D, SH, V, iwf, sectors, bench, source="synthetic", iwf_source="synthetic",
+                      benchmark_tri=pd.Series(tri, index=dates))
 
 
 # ------------------------------------------------------------------------------ yahoo
@@ -268,7 +274,28 @@ def load_yahoo(cfg: IndexConfig, refresh: bool = False) -> MarketData:
         source="yahoo",
         shares_source=shares_src,
         iwf_source=iwf_source,
+        benchmark_tri=load_benchmark_tri(cfg.benchmark_tri_file) if cfg.benchmark_tri_file else None,
     )
+
+
+def load_benchmark_tri(path: str | Path) -> pd.Series:
+    """Read a total-return benchmark CSV (e.g. NIFTY 50 TRI from niftyindices.com).
+    Accepts any CSV with a date column (name containing 'date') and a numeric level column
+    (preferring names containing 'total', 'tri', 'return' or 'close'); day-first dates and
+    thousands separators are handled."""
+    df = pd.read_csv(path)
+    cols = {c: c.strip().lower() for c in df.columns}
+    date_col = next((c for c, l in cols.items() if "date" in l), df.columns[0])
+    others = [c for c in df.columns if c != date_col]
+    pref = [c for c in others if any(k in cols[c] for k in ("total", "tri", "return", "close"))]
+    val_col = (pref or others)[0]
+    dates = pd.to_datetime(df[date_col].astype(str).str.strip(), dayfirst=True, format="mixed")
+    vals = pd.to_numeric(df[val_col].astype(str).str.replace(",", "").str.strip(), errors="coerce")
+    s = pd.Series(vals.to_numpy(), index=dates).dropna().sort_index()
+    s = s[~s.index.duplicated(keep="last")]
+    if len(s) < 20:
+        raise ValueError(f"benchmark TRI file {path} has too few usable rows ({len(s)})")
+    return s
 
 
 def split_factor_after(splits: pd.DataFrame) -> pd.DataFrame:

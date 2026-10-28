@@ -10,20 +10,20 @@
 
 ## Performance and risk
 
-| Metric | Index PR | Index TR | Index NET | Benchmark PR |
+| Metric | Index PR | Benchmark PR | Index TR | Index NET |
 |---|---:|---:|---:|---:|
-| CAGR | 14.25% | 16.13% | 16.11% | 13.49% |
-| Volatility (ann.) | 15.49% | 15.47% | 15.47% | 16.13% |
-| Sharpe | 0.52 | 0.62 | 0.62 | 0.46 |
-| Sortino | 0.71 | 0.86 | 0.86 | 0.63 |
-| Max drawdown | -35.81% | -35.35% | -35.35% | -38.44% |
-| Calmar | 0.40 | 0.46 | 0.46 | 0.35 |
-| 1-day VaR 95% | 1.35% | 1.35% | 1.35% | 1.37% |
-| 1-day CVaR 95% | 2.23% | 2.22% | 2.22% | 2.35% |
-| Skew | -1.03 | -0.98 | -0.98 | -1.12 |
-| Excess kurtosis | 20.08 | 19.38 | 19.38 | 20.17 |
-| Best month | 12.83% | 12.83% | 12.83% | 14.68% |
-| Worst month | -20.53% | -19.99% | -20.00% | -23.25% |
+| CAGR | 14.25% | 13.49% | 16.13% | 16.11% |
+| Volatility (ann.) | 15.49% | 16.13% | 15.47% | 15.47% |
+| Sharpe | 0.52 | 0.46 | 0.62 | 0.62 |
+| Sortino | 0.71 | 0.63 | 0.86 | 0.86 |
+| Max drawdown | -35.81% | -38.44% | -35.35% | -35.35% |
+| Calmar | 0.40 | 0.35 | 0.46 | 0.46 |
+| 1-day VaR 95% | 1.35% | 1.37% | 1.35% | 1.35% |
+| 1-day CVaR 95% | 2.23% | 2.35% | 2.22% | 2.22% |
+| Skew | -1.03 | -1.12 | -0.98 | -0.98 |
+| Excess kurtosis | 20.08 | 20.17 | 19.38 | 19.38 |
+| Best month | 12.83% | 14.68% | 12.83% | 12.83% |
+| Worst month | -20.53% | -23.25% | -19.99% | -20.00% |
 | Beta | 0.95 | – | – | – |
 | Jensen's alpha (ann.) | 0.97% | – | – | – |
 | Correlation | 0.98 | – | – | – |
@@ -34,30 +34,54 @@
 | Down capture | 0.95 | – | – | – |
 | Monthly hit rate | 50.43% | – | – | – |
 
-Relative statistics compare the **price-return** index with the **price-return** benchmark, so dividends do not flatter the comparison.
+Comparisons are strictly like-for-like. The headline chart and the relative statistics in the **Index PR** column compare the index's **price return** with the NIFTY 50 **price return**.
 
-**Is the active return statistically meaningful?** A moving-block bootstrap (2,000 resamples, 20-day blocks) puts the annualised active return at
-0.56% with a 95% interval of [-0.97%, 2.30%]; 79% of resamples are positive.
+**Total return is not compared with a benchmark** in this run: no NIFTY 50 Total Returns Index was supplied, and comparing the index's TR with a price index would overstate it by roughly the dividend yield. Set `data.benchmark_tri_file` to add a TR vs TRI comparison. The index's TR and NET figures above are absolute numbers only.
 
-**Worst drawdown (TR):** -35.4%, peak 2020-01-17 → trough 2020-03-23, recovered 2020-10-08.
+**Is the active return statistically meaningful?** A moving-block bootstrap (2,000 resamples, 20-day blocks) of daily PR − PR active returns puts the mean annualised active return at
+0.56% with a 95% interval of [-0.97%, 2.30%]; 79% of resamples are positive. (This arithmetic mean differs slightly from the CAGR gap because the two series have different volatility.)
+
+**Worst drawdown (price return):** -35.8%, peak 2020-01-17 → trough 2020-03-23, recovered 2020-10-12.
 
 ![drawdown](charts/drawdown.png)
 ![rolling](charts/rolling.png)
 
+## What drives the result
+
+- **Size of the gap.** Price return vs price return, the index's CAGR differs from the NIFTY 50's by **+0.75% a year** (95% interval [-0.77%, 2.49%]), so the difference is **not** statistically distinguishable from zero.
+- **Which rule drives it.** Universe choice +1.17% (not significant); Top-40 cut -0.70% (significant); Stock & sector caps +0.28% (not significant). The largest single effect is **universe choice**.
+- **Universe choice is where survivorship bias shows up.** That step compares an index of all candidates with the real NIFTY 50. The candidates are today's large caps, so they include companies that grew into the list and exclude ones that fell out of it. Treat the +1.17% as likely overstated, partly an artefact of the fixed candidate list rather than of the index rules.
+- **Sector view of the rules.** Against the parent universe, Brinson-Fachler splits the cumulative (not annual) effect of the top-40 cut and caps into allocation +6.91%, selection -20.55% and interaction +1.12% (see the attribution section).
+- **Is it broad-based?** The index beat the NIFTY in 7 of 10 calendar years. The best year (2020, +3.96%) matters: excluding it, the annual gap is +0.39%. Worst year: 2023 (-1.08%).
+- **What this does not show.** A backtest over one ten-year window, on a fixed list of today's large caps, cannot establish a repeatable edge. Read the gap as a description of how these rules behaved in this period, not as evidence that they will outperform.
+
+![bridge](charts/bridge.png)
+
+| Step | CAGR / effect | 95% interval |
+|---|---:|---:|
+| NIFTY 50 | 13.49% |  |
+| Universe choice | 1.17% | [-0.45%, 3.01%] |
+| Top-40 cut | -0.70% | [-1.15%, -0.26%] |
+| Stock & sector caps | 0.28% | [-0.11%, 0.77%] |
+| Total gap (index − NIFTY) | 0.75% | [-0.77%, 2.49%] |
+| Index | 14.25% |  |
+
 ## Calendar-year returns
 
-| Year | PR | TR | NET | Benchmark |
-|---|---:|---:|---:|---:|
-| 2016 | 4.87% | 6.10% | 6.07% | 5.78% |
-| 2017 | 30.73% | 32.93% | 32.91% | 28.65% |
-| 2018 | 4.38% | 6.09% | 6.06% | 3.15% |
-| 2019 | 12.17% | 13.85% | 13.84% | 12.02% |
-| 2020 | 18.86% | 20.91% | 20.87% | 14.90% |
-| 2021 | 25.53% | 27.53% | 27.52% | 24.12% |
-| 2022 | 4.66% | 6.32% | 6.31% | 4.33% |
-| 2023 | 18.95% | 21.04% | 21.03% | 20.03% |
-| 2024 | 9.31% | 10.87% | 10.86% | 8.80% |
-| 2025 | 9.57% | 11.35% | 11.34% | 9.70% |
+Benchmark columns are the NIFTY 50 price index; the active columns compare like with like.
+
+| Year | PR | TR | NET | Benchmark PR | Active (PR − PR) |
+|---|---:|---:|---:|---:|---:|
+| 2016 | 4.87% | 6.10% | 6.07% | 5.78% | -0.91% |
+| 2017 | 30.73% | 32.93% | 32.91% | 28.65% | 2.08% |
+| 2018 | 4.38% | 6.09% | 6.06% | 3.15% | 1.23% |
+| 2019 | 12.17% | 13.85% | 13.84% | 12.02% | 0.14% |
+| 2020 | 18.86% | 20.91% | 20.87% | 14.90% | 3.96% |
+| 2021 | 25.53% | 27.53% | 27.52% | 24.12% | 1.41% |
+| 2022 | 4.66% | 6.32% | 6.31% | 4.33% | 0.33% |
+| 2023 | 18.95% | 21.04% | 21.03% | 20.03% | -1.08% |
+| 2024 | 9.31% | 10.87% | 10.86% | 8.80% | 0.50% |
+| 2025 | 9.57% | 11.35% | 11.34% | 9.70% | -0.13% |
 
 ## Weighting-scheme comparison
 
@@ -192,7 +216,7 @@ Limitations:
 - **Survivorship bias.** The candidates are today's large caps, so companies that were large in 2016 but later shrank or delisted are missing. Treat results as a fixed-candidate-universe study, not a reconstruction of a historical index.
 - **Free float.** No historical free-float data was used (IWF = 1), so weights are on full market cap. The engine supports point-in-time IWFs via `data.shareholding_file`.
 - **Share counts.** Where a stock's weight rests on back-filled or current share counts (above), its historical weight uses information that was not available at the time.
-- **Benchmark.** NIFTY 50 price return; a dividend-inclusive comparison needs the NIFTY 50 TRI.
+- **Benchmark.** NIFTY 50 price index only; the index's total return is not benchmarked until a NIFTY 50 TRI file is supplied.
 - **Corporate actions.** Splits via split-adjusted prices; spin-offs and rights issues are not modelled.
 
-Run log: `run_log.json` (2026-10-28T19:56:41+00:00, checks passed 9/9, config hash `d8989fa13d971f83`).
+Run log: `run_log.json` (2026-10-28T20:26:01+00:00, checks passed 9/9, config hash `5e80518b00643f14`).

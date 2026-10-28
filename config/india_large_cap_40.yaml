@@ -14,7 +14,12 @@ index:
 data:
   source: yahoo            # yahoo | synthetic
   cache_dir: data/cache
-  benchmark_ticker: "^NSEI"  # NIFTY 50 (price return)
+  benchmark_ticker: "^NSEI"  # NIFTY 50 (price return) - compared with the index's PRICE return
+  # Optional NIFTY 50 Total Returns Index (TRI) CSV, e.g. downloaded from niftyindices.com
+  # (historical data -> "NIFTY 50" -> Total Returns Index). Needs a date column and a value column.
+  # When set, the index's TOTAL return is compared with it (TR vs TRI). Without it, no TR
+  # comparison is made, because comparing TR with a price index would flatter the index.
+  benchmark_tri_file: null         # e.g. data/nifty50_tri.csv
   synthetic_seed: 42
   # Optional point-in-time shareholding patterns (e.g. exported from Capitaline):
   # CSV with columns date, ticker, shares_outstanding, promoter_holding_pct.
